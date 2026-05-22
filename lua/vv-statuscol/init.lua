@@ -80,6 +80,7 @@ local defaults = {
 local config = vim.deepcopy(defaults)
 local sign_cache = {}
 local result_cache = {}
+local click_hooks = {}
 local did_setup = false
 local enabled = false
 local stc_expr = "%!v:lua.require'vv-statuscol'.get()"
@@ -239,10 +240,20 @@ end
 
 function M.get() return cached_get() end
 
+---@param fn fun(pos: { winid: integer, line: integer }): boolean
+function M.on_click(fn)
+  click_hooks[#click_hooks + 1] = fn
+end
+
 function M.click_fold()
   local pos = vim.fn.getmousepos()
   if pos.winid == 0 or pos.line == 0 then return end
   vim.api.nvim_win_set_cursor(pos.winid, { pos.line, 0 })
+
+  for _, fn in ipairs(click_hooks) do
+    if fn(pos) then return end
+  end
+
   vim.api.nvim_win_call(pos.winid, function()
     if vim.fn.foldlevel(pos.line) > 0 then
       vim.cmd('silent! normal! za')
