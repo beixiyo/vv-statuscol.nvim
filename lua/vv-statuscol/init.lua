@@ -49,6 +49,15 @@ end
 -- ======================= Config =======================
 -- NerdFont 默认图标：fold_open / fold_closed 用 FontAwesome 的 caret-down/right（最通用）
 -- Git delete 用 nf-md-minus（和 gitsigns 一致的视觉）；add/change 用 U+258E 竖条（非 PUA）
+
+---@class VVStatusColConfig
+---@field enabled boolean 是否启用状态列 @default true
+---@field ft_ignore string[] 忽略的文件类型列表 @default { 'dashboard', 'vv-explorer', ... }
+---@field bt_ignore string[] 忽略的 buftype 列表 @default { 'terminal', 'nofile', 'prompt' }
+---@field refresh integer 缓存刷新间隔（ms） @default 50
+---@field fold { open: string, close: string } 折叠图标 @default { open = '', close = '' }
+---@field git table<string, { text: string, hl: string }> Git 行级 diff 图标与高亮 @default { A = { text = '▎', hl = 'VVGitAdded' }, ... }
+
 local defaults = {
   enabled = true,
   ft_ignore = {
@@ -72,6 +81,8 @@ local config = vim.deepcopy(defaults)
 local sign_cache = {}
 local result_cache = {}
 local did_setup = false
+local enabled = false
+local stc_expr = "%!v:lua.require'vv-statuscol'.get()"
 
 -- ======================= Signs =======================
 local function build_buf_signs(buf)
@@ -128,7 +139,7 @@ end
 
 -- 暴露给 git 子模块：内部 markers 变化后 flush 字符串缓存 + 重绘
 ---@param buf? integer
-function M.flush_cache(buf)
+function M._flush_cache(buf)
   if buf then sign_cache[buf] = nil end
   result_cache = {}
 end
@@ -239,6 +250,26 @@ function M.click_fold()
   end)
 end
 
+function M.enable()
+  if enabled then return end
+  enabled = true
+  vim.o.statuscolumn = stc_expr
+end
+
+function M.disable()
+  if not enabled then return end
+  enabled = false
+  vim.o.statuscolumn = ''
+end
+
+function M.toggle()
+  if enabled then
+    M.disable()
+  else
+    M.enable()
+  end
+end
+
 function M.setup(opts)
   if did_setup then return end
   config = vim.tbl_deep_extend('force', defaults, opts or {})
@@ -269,8 +300,12 @@ function M.setup(opts)
     end,
   })
 
-  vim.o.statuscolumn = "%!v:lua.require'vv-statuscol'.get()"
+  M.enable()
   did_setup = true
+
+  vim.api.nvim_create_user_command('VVStatusColEnable', function() M.enable() end, {})
+  vim.api.nvim_create_user_command('VVStatusColDisable', function() M.disable() end, {})
+  vim.api.nvim_create_user_command('VVStatusColToggle', function() M.toggle() end, {})
 end
 
 return M
