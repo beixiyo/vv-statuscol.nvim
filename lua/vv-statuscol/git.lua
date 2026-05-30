@@ -63,34 +63,31 @@ function M.refresh(bufnr)
   local root = vim.fs.dirname(path)
   pending[bufnr] = true
 
-  vim.system(
-    { 'git', '-C', root, 'rev-parse', '--show-toplevel' },
-    { text = true },
-    vim.schedule_wrap(function(rev)
-      if rev.code ~= 0 then
+  require('vv-utils.git').root_async(root, function(toplevel)
+    if not toplevel then
+      pending[bufnr] = nil
+      markers[bufnr] = nil
+      return
+    end
+    vim.system(
+      { 'git', '-C', root, '--no-pager', 'diff', '-U0', '--no-color',
+        '--no-ext-diff', '--', path },
+      { text = true },
+      vim.schedule_wrap(function(d)
         pending[bufnr] = nil
-        markers[bufnr] = nil
-        return
-      end
-      vim.system(
-        { 'git', '-C', root, '--no-pager', 'diff', '-U0', '--no-color',
-          '--no-ext-diff', '--', path },
-        { text = true },
-        vim.schedule_wrap(function(d)
-          pending[bufnr] = nil
-          if d.code ~= 0 then
-            markers[bufnr] = nil
-            return
-          end
-          markers[bufnr] = M.parse(d.stdout or '')
-          -- 让父模块 flush 字符串缓存，再触发 statuscolumn 重绘
-          local ok, parent = pcall(require, 'vv-statuscol')
-          if ok and parent._flush_cache then parent._flush_cache(bufnr) end
-          if vim.api.nvim_buf_is_loaded(bufnr) then
-            pcall(vim.api.nvim__redraw, { buf = bufnr, statuscolumn = true })
-          end
-        end))
-    end))
+        if d.code ~= 0 then
+          markers[bufnr] = nil
+          return
+        end
+        markers[bufnr] = M.parse(d.stdout or '')
+        -- 让父模块 flush 字符串缓存，再触发 statuscolumn 重绘
+        local ok, parent = pcall(require, 'vv-statuscol')
+        if ok and parent._flush_cache then parent._flush_cache(bufnr) end
+        if vim.api.nvim_buf_is_loaded(bufnr) then
+          pcall(vim.api.nvim__redraw, { buf = bufnr, statuscolumn = true })
+        end
+      end))
+  end)
 end
 
 ---@param buf integer
