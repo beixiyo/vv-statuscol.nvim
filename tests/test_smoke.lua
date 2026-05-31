@@ -71,10 +71,11 @@ assert_no_match(
   'lua/plugins/specs/ui/vv%-statuscol%.lua'
 )
 
+-- README 安装段是 lazy.nvim 风格插件 spec（以仓库名定义行为锚点；README 重排后不再含字面 'lazy.nvim'）
 assert_match(
-  'README 包含 lazy.nvim 安装格式',
+  'README 包含 lazy.nvim 风格安装示例',
   readme,
-  'lazy%.nvim'
+  "'beixiyo/vv%-statuscol%.nvim'"
 )
 
 -- =============================================
@@ -137,6 +138,57 @@ assert_eq('result_cache buf=42 条目已清理', result_cache['100:42:5:0:3'], n
 assert_eq('result_cache buf=42 条目已清理(2)', result_cache['100:42:10:0:8'], nil)
 assert_eq('result_cache buf=99 未受影响', result_cache['200:99:5:0:3'], 'cached_3')
 assert_eq('result_cache buf=99 未受影响(2)', result_cache['200:99:20:0:18'], 'cached_4')
+
+-- =============================================
+-- FIX 5 (#69): git 异步回调在 buffer 失效后不写回 markers
+-- =============================================
+local git_path = root .. '/lua/vv-statuscol/git.lua'
+local git_src = table.concat(vim.fn.readfile(git_path), '\n')
+
+-- diff 回调（写 markers 前）必须有 is_loaded 守卫
+local diff_cb = git_src:match('schedule_wrap.-M%.parse') or ''
+assert_match('#69 diff 回调写 markers 前有 is_loaded 守卫', diff_cb, 'nvim_buf_is_loaded%(bufnr%)')
+
+-- rev-parse(root_async) 回调在 spawn diff 前也有 is_loaded 守卫
+local revparse_cb = git_src:match('root_async.-vim%.system') or ''
+assert_match('#69 rev-parse 回调有 is_loaded 守卫', revparse_cb, 'nvim_buf_is_loaded%(bufnr%)')
+
+-- =============================================
+-- FIX 6 (#70): result_cache 键纳入影响渲染的窗口选项
+-- =============================================
+local cached_fn = init_src:match('local function cached_get.-result_cache%[key%]') or ''
+assert_match('#70 缓存键纳入 signcolumn', cached_fn, 'signcolumn')
+assert_match('#70 缓存键纳入 number', cached_fn, 'wo%.number')
+assert_match('#70 缓存键纳入 relativenumber', cached_fn, 'wo%.relativenumber')
+assert_match('#70 缓存键纳入 foldcolumn', cached_fn, 'foldcolumn')
+
+-- 逻辑：复刻 opt_flags 公式，验证四个选项任一变化都改变键
+local function opt_flags(sc, nu, rnu, fdc)
+  return string.format('%d%d%d%d',
+    sc ~= 'no' and 1 or 0, nu and 1 or 0, rnu and 1 or 0, fdc == '0' and 1 or 0)
+end
+local base = opt_flags('yes', true, false, '1')
+assert_eq('#70 signcolumn=no 改变键', opt_flags('no', true, false, '1') ~= base, true)
+assert_eq('#70 nonumber 改变键', opt_flags('yes', false, false, '1') ~= base, true)
+assert_eq('#70 relativenumber 改变键', opt_flags('yes', true, true, '1') ~= base, true)
+assert_eq('#70 foldcolumn=0 改变键', opt_flags('yes', true, false, '0') ~= base, true)
+
+-- 新键仍保留 ':buf:' 子串，BufWipeout 前缀清理逻辑不受影响
+local sample_key = string.format('%d:%d:%d:%d:%d:%s', 100, 42, 5, 0, 3, base)
+assert_match('#70 新键仍含 :buf: 供 BufWipeout 清理', sample_key, ':42:')
+
+-- =============================================
+-- FIX 7 (#71): disable() 释放后台资源，enable() 重挂
+-- =============================================
+assert_match('#71 git.lua 提供 detach()', git_src, 'function M%.detach')
+assert_match('#71 detach 删除 VVStatusColGit augroup', git_src, 'del_augroup_by_name')
+
+assert_match('#71 init 定义 start_resources', init_src, 'local function start_resources')
+assert_match('#71 init 定义 stop_resources', init_src, 'local function stop_resources')
+assert_match('#71 stop_resources 停止 refresh_timer', init_src, 'refresh_timer:stop')
+assert_match('#71 stop_resources 删除 statuscol_augroup', init_src, 'del_augroup_by_id')
+assert_match('#71 disable 调用 stop_resources', init_src, 'stop_resources%(%)')
+assert_match('#71 enable 调用 start_resources', init_src, 'start_resources%(%)')
 
 -- =============================================
 -- 汇总

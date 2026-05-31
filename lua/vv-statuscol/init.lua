@@ -85,6 +85,10 @@ local did_setup = false
 local enabled = false
 local stc_expr = "%!v:lua.require'vv-statuscol'.get()"
 
+-- enable() 时创建、disable() 时释放的运行期资源（缓存刷新 timer + BufWipeout 清理 augroup）
+local refresh_timer
+local statuscol_augroup
+
 -- ======================= Signs =======================
 local function build_buf_signs(buf)
   local out = {}
@@ -228,8 +232,17 @@ end
 local function cached_get()
   local win = vim.g.statusline_winid
   local buf = vim.api.nvim_win_get_buf(win)
-  local key = string.format('%d:%d:%d:%d:%d',
-    win, buf, vim.v.lnum, vim.v.virtnum ~= 0 and 1 or 0, vim.v.relnum)
+  -- 渲染输出还依赖这些窗口选项：signcolumn（决定 sign 段 + git 段是否渲染）、
+  -- number/relativenumber（行号段）、foldcolumn（fold 段）。不纳入键会在选项切换后
+  -- 命中陈旧串，直到 50ms timer 整体清空缓存才纠正
+  local wo = vim.wo[win]
+  local opt_flags = string.format('%d%d%d%d',
+    wo.signcolumn ~= 'no' and 1 or 0,
+    wo.number and 1 or 0,
+    wo.relativenumber and 1 or 0,
+    wo.foldcolumn == '0' and 1 or 0)
+  local key = string.format('%d:%d:%d:%d:%d:%s',
+    win, buf, vim.v.lnum, vim.v.virtnum ~= 0 and 1 or 0, vim.v.relnum, opt_flags)
   local hit = result_cache[key]
   if hit then return hit end
   local ok, ret = pcall(M._get)
@@ -261,9 +274,53 @@ function M.click_fold()
   end)
 end
 
+-- 挂载后台资源：git autocmd（异步 diff 刷新）、缓存刷新 timer、BufWipeout 清理 augroup
+local function start_resources()
+  require('vv-statuscol.git').attach()
+
+  refresh_timer = assert((vim.uv or vim.loop).new_timer())
+  refresh_timer:start(config.refresh, config.refresh, function()
+    sign_cache, result_cache = {}, {}
+  end)
+
+  statuscol_augroup = vim.api.nvim_create_augroup('VVStatusCol', { clear = true })
+  vim.api.nvim_create_autocmd('BufWipeout', {
+    group = statuscol_augroup,
+    callback = function(args)
+      sign_cache[args.buf] = nil
+      local prefix = ':' .. args.buf .. ':'
+      for k in pairs(result_cache) do
+        if k:find(prefix, 1, true) then
+          result_cache[k] = nil
+        end
+      end
+    end,
+  })
+end
+
+-- 释放后台资源：否则 disable 后每次读写/聚焦仍会 spawn git 子进程跑 diff 并对
+-- 已无自定义状态列的窗口做无意义重绘，50ms timer 也仍在空转清缓存
+local function stop_resources()
+  require('vv-statuscol.git').detach()
+
+  if refresh_timer then
+    refresh_timer:stop()
+    if not refresh_timer:is_closing() then refresh_timer:close() end
+    refresh_timer = nil
+  end
+
+  if statuscol_augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, statuscol_augroup)
+    statuscol_augroup = nil
+  end
+
+  sign_cache, result_cache = {}, {}
+end
+
 function M.enable()
   if enabled then return end
   enabled = true
+  start_resources()
   vim.o.statuscolumn = stc_expr
 end
 
@@ -271,6 +328,7 @@ function M.disable()
   if not enabled then return end
   enabled = false
   vim.o.statuscolumn = ''
+  stop_resources()
 end
 
 function M.toggle()
@@ -287,30 +345,12 @@ function M.setup(opts)
 
   require('vv-statuscol.hl').setup()
   require('vv-statuscol.git').configure(config.git)
-  require('vv-statuscol.git').attach()
 
   -- foldcolumn='1' 作为 fold 段的启用 flag（FFI 已绕开实际渲染依赖）
   if vim.o.foldcolumn == '0' then vim.opt.foldcolumn = '1' end
 
-  local timer = assert((vim.uv or vim.loop).new_timer())
-  timer:start(config.refresh, config.refresh, function()
-    sign_cache, result_cache = {}, {}
-  end)
-
-  local aug = vim.api.nvim_create_augroup('VVStatusCol', { clear = true })
-  vim.api.nvim_create_autocmd('BufWipeout', {
-    group = aug,
-    callback = function(args)
-      sign_cache[args.buf] = nil
-      local prefix = ':' .. args.buf .. ':'
-      for k in pairs(result_cache) do
-        if k:find(prefix, 1, true) then
-          result_cache[k] = nil
-        end
-      end
-    end,
-  })
-
+  -- 后台资源（git autocmd / 刷新 timer / BufWipeout augroup）的挂载与释放统一交给
+  -- enable()/disable() 管理，确保 disable 后真正停掉 git diff 与重绘（见 #71）
   M.enable()
   did_setup = true
 

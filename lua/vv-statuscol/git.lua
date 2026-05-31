@@ -64,6 +64,12 @@ function M.refresh(bufnr)
   pending[bufnr] = true
 
   require('vv-utils.git').root_async(root, function(toplevel)
+    -- buffer 可能在 rev-parse 在途时被 wipe：失效则清理并退出，勿再 spawn diff
+    if not vim.api.nvim_buf_is_loaded(bufnr) then
+      pending[bufnr] = nil
+      markers[bufnr] = nil
+      return
+    end
     if not toplevel then
       pending[bufnr] = nil
       markers[bufnr] = nil
@@ -75,6 +81,11 @@ function M.refresh(bufnr)
       { text = true },
       vim.schedule_wrap(function(d)
         pending[bufnr] = nil
+        -- diff 在途时 buffer 已 wipe：清理 markers 后退出，避免写回陈旧数据 / 复用 bufnr 脏读
+        if not vim.api.nvim_buf_is_loaded(bufnr) then
+          markers[bufnr] = nil
+          return
+        end
         if d.code ~= 0 then
           markers[bufnr] = nil
           return
@@ -122,6 +133,11 @@ function M.attach()
       M.refresh(buf)
     end
   end
+end
+
+--- 卸下 attach() 注册的 autocmd（供父模块 disable 时停掉后台 git diff）
+function M.detach()
+  pcall(vim.api.nvim_del_augroup_by_name, 'VVStatusColGit')
 end
 
 return M
