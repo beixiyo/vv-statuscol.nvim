@@ -113,6 +113,14 @@ function M.symbol(buf, lnum)
   return kind and GLYPHS[kind]
 end
 
+--- buffer 是否存在任意行级 git 标记（供 statuscolumn 决定 git 段宽度：有则 1 列，无则 0）
+---@param buf integer
+---@return boolean
+function M.has(buf)
+  local m = markers[buf]
+  return m ~= nil and next(m) ~= nil
+end
+
 ---@param buf integer
 function M.clear(buf)
   markers[buf] = nil

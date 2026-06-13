@@ -1,13 +1,19 @@
 -- vv-statuscol: 自定义状态列（mark / sign / 行号 / fold / git）
 --
--- 布局：[mark 2w][sign 2w][%= lnum][ ][fold 1w][git 1w]
+-- 布局：[mark][sign][%= lnum][ ][fold][git][ ]
+--   各槽「按内容动态收宽」：整 buffer/窗口无该类内容时收成 0 宽（statuscolumn 自动收窄），
+--   无标记/诊断/改动/折叠的文件左栏只剩行号。原生 signcolumn/foldcolumn 均设为 no/0（不走
+--   statuscolumn 渲染，开着只白占列）。宽度判定都是「整体级」恒定（mark/sign/git 按 buffer、
+--   fold 按窗口折叠结构），故同屏每行宽度一致，右对齐行号不会因个别行多/少一格而抖动
 --
--- 设计参考 snacks.statuscolumn：
+-- 设计参考 snacks.statuscolumn，但更进一步（独立各段 + 动态收宽 + 内建 git）：
 --   * 每行按 type 分槽（mark / sign / git），同 type 多 sign 取 priority 最高
 --   * sign 段是 catch-all：诊断 / DAP / 任意 extmark sign 都落这里
 --   * git 段由 vv-statuscol.git 独占（内建行级 diff，不依赖 gitsigns）
 --   * fold 通过 FFI 读 fold_info，绕开 foldcolumn 渲染依赖
 --   * 点击 gutter 任意位置：foldlevel > 0 则 toggle 折叠
+--   * statuscolumn 宽度「只随重绘自动变宽、不自动变窄」，故收窄靠事件精确派发：
+--     git 刷新 / DiagnosticChanged（debounce）/ 折叠开合 后显式 nvim__redraw{statuscolumn}
 
 local M = {}
 
@@ -88,6 +94,8 @@ local stc_expr = "%!v:lua.require'vv-statuscol'.get()"
 -- enable() 时创建、disable() 时释放的运行期资源（缓存刷新 timer + BufWipeout 清理 augroup）
 local refresh_timer
 local statuscol_augroup
+-- DiagnosticChanged 防抖重绘的取消句柄（debounce 内部常驻 uv timer，disable 时须 cancel 防泄漏）
+local diag_redraw_cancel
 
 -- ======================= Signs =======================
 local function build_buf_signs(buf)
@@ -133,13 +141,29 @@ local function build_buf_signs(buf)
   return out
 end
 
-local function line_signs(buf, lnum)
-  local bs = sign_cache[buf]
-  if not bs then
-    bs = build_buf_signs(buf)
-    sign_cache[buf] = bs
+-- buffer 级缓存：行 -> sign 映射 + 整 buffer 是否含 mark / sign 的标志位
+-- 标志位让 statuscolumn 按「整个 buffer 有没有」决定槽宽（满宽 or 0），而非逐行/逐屏，
+-- 这样不会因滚动到无标记区域就抖动，符合「出现才变宽、消失才收窄」
+---@param buf integer
+---@return { map: table, has_mark: boolean, has_sign: boolean }
+local function buf_data(buf)
+  local d = sign_cache[buf]
+  if not d then
+    local map = build_buf_signs(buf)
+    local has_mark, has_sign = false, false
+    for _, e in pairs(map) do
+      if e.mark then has_mark = true end
+      if e.sign then has_sign = true end
+      if has_mark and has_sign then break end
+    end
+    d = { map = map, has_mark = has_mark, has_sign = has_sign }
+    sign_cache[buf] = d
   end
-  return bs[lnum] or {}
+  return d
+end
+
+local function line_signs(buf, lnum)
+  return buf_data(buf).map[lnum] or {}
 end
 
 -- 暴露给 git 子模块：内部 markers 变化后 flush 字符串缓存 + 重绘
@@ -163,16 +187,43 @@ local function icon(entry, width)
   return text
 end
 
+-- fold 段直接由 FFI 读折叠状态自绘（不依赖原生 foldcolumn，故全局 foldcolumn 设 '0' 省掉那一列）
+-- 无折叠的行返回 ''（而非空格），让 statuscolumn 在整屏都无折叠时把 fold 列收成 0 宽
 local function render_fold(win, lnum)
-  if vim.wo[win].foldcolumn == '0' then return ' ' end
   local info = fold_info(win, lnum)
-  if not info or info.level == 0 then return ' ' end
+  if not info or info.level == 0 then return '' end
   if info.lines > 0 then
     return '%#VVStatusColFold#' .. (config.fold.close or '') .. '%*'
   elseif info.start == lnum then
     return '%#VVStatusColFold#' .. (config.fold.open or '') .. '%*'
   end
-  return ' '
+  return ''
+end
+
+-- buffer 是否存在折叠「结构」（与开合无关：fold_info.level>0 在折叠展开时同样为真）
+-- 有结构 → 整窗每行恒定预留 1 格 fold 槽（无字形的行填空格），否则「只有折叠起始行多出一格」
+-- 会把右对齐的行号往左挤 → 同屏行号参差。早退 + 上限扫描：代码文件通常前几行就命中折叠；
+-- 纯无折叠的大文件最多扫 FOLD_PROBE_MAX 行就判定为无。按 win + changedtick 缓存，每帧只扫一次
+local FOLD_PROBE_MAX = 2000
+local fold_has_cache = {} --- @type table<integer, { tick: integer, has: boolean }>
+local function win_has_fold(win)
+  if not vim.wo[win].foldenable then return false end
+  local buf = vim.api.nvim_win_get_buf(win)
+  local tick = vim.b[buf].changedtick
+  local c = fold_has_cache[win]
+  if c and c.tick == tick then return c.has end
+
+  local has = false
+  local n = math.min(vim.api.nvim_buf_line_count(buf), FOLD_PROBE_MAX)
+  for l = 1, n do
+    local info = fold_info(win, l)
+    if info and info.level > 0 then
+      has = true
+      break
+    end
+  end
+  fold_has_cache[win] = { tick = tick, has = has }
+  return has
 end
 
 local function render_lnum(win)
@@ -207,24 +258,42 @@ function M._get()
   local buf = vim.api.nvim_win_get_buf(win)
   if is_ignored(buf) then return '' end
 
-  -- wrapped / virtual line：只保留右对齐锚点，不渲染内容
+  local data = buf_data(buf)
+  local git = require('vv-statuscol.git')
+  local git_has = git.has(buf)
+
+  -- 动态槽宽：整 buffer/窗口无该类内容时收成 0 宽，statuscolumn 自动收窄（避免空文件白占左栏）
+  -- 四段宽度都是「整体级」恒定（mark/sign/git 按 buffer、fold 按窗口折叠结构），故同屏每行宽度一致，
+  -- 右对齐的行号不会因个别行多/少一格而左右跳
+  local mark_w = data.has_mark and 2 or 0
+  local sign_w = data.has_sign and 2 or 0
+  local git_w  = git_has and 1 or 0
+  local fold_w = win_has_fold(win) and 1 or 0
+
+  -- wrapped / virtual line：只保留右对齐锚点 + 与正常行一致的左右留白（末尾留白同正常行）
   if vim.v.virtnum ~= 0 then
-    return '    %= '
+    return string.rep(' ', mark_w + sign_w) .. '%= ' .. string.rep(' ', fold_w + git_w) .. ' '
   end
 
-  local show_signs = vim.wo[win].signcolumn ~= 'no'
-  local s = line_signs(buf, vim.v.lnum)
+  local s = data.map[vim.v.lnum] or {}
+  local git_entry = git_has and git.symbol(buf, vim.v.lnum) or nil
 
-  -- git 槽由内建 vv-statuscol.git 独占（不依赖 gitsigns 等外部插件）
-  local git_entry = require('vv-statuscol.git').symbol(buf, vim.v.lnum)
+  -- fold 槽恒定 1 格（有折叠结构时）：本行有字形则画字形，无则填空格，保证行号右侧宽度稳定
+  -- 末尾恒留 1 格：fold/git 动态收 0 后原本靠 git 段空格充当的「字形↔正文」间距会消失，补一格右留白
+  local fold_part = ''
+  if fold_w > 0 then
+    local g = render_fold(win, vim.v.lnum)
+    fold_part = g ~= '' and g or ' '
+  end
 
   local parts = {
-    icon(s.mark, 2),
-    show_signs and icon(s.sign, 2) or '  ',
+    mark_w > 0 and icon(s.mark, mark_w) or '',
+    sign_w > 0 and icon(s.sign, sign_w) or '',
     render_lnum(win),
     ' ',
-    render_fold(win, vim.v.lnum),
-    show_signs and icon(git_entry, 1) or ' ',
+    fold_part,
+    git_w > 0 and icon(git_entry, git_w) or '',
+    ' ',
   }
   return "%@v:lua.require'vv-statuscol'.click_fold@" .. table.concat(parts) .. '%T'
 end
@@ -232,15 +301,18 @@ end
 local function cached_get()
   local win = vim.g.statusline_winid
   local buf = vim.api.nvim_win_get_buf(win)
-  -- 渲染输出还依赖这些窗口选项：signcolumn（决定 sign 段 + git 段是否渲染）、
-  -- number/relativenumber（行号段）、foldcolumn（fold 段）。不纳入键会在选项切换后
-  -- 命中陈旧串，直到 50ms timer 整体清空缓存才纠正
+  -- 渲染宽度依赖：number/relativenumber（行号段）+ 各槽是否有内容（mark/sign/git/fold 决定满宽 or 0）
+  -- 不纳入键会在内容增减后命中陈旧串、宽度算错，直到 50ms timer 整体清空缓存才纠正
   local wo = vim.wo[win]
-  local opt_flags = string.format('%d%d%d%d',
-    wo.signcolumn ~= 'no' and 1 or 0,
+  local data = buf_data(buf)
+  local git_has = require('vv-statuscol.git').has(buf)
+  local opt_flags = string.format('%d%d%d%d%d%d',
     wo.number and 1 or 0,
     wo.relativenumber and 1 or 0,
-    wo.foldcolumn == '0' and 1 or 0)
+    data.has_mark and 1 or 0,
+    data.has_sign and 1 or 0,
+    git_has and 1 or 0,
+    win_has_fold(win) and 1 or 0)
   local key = string.format('%d:%d:%d:%d:%d:%s',
     win, buf, vim.v.lnum, vim.v.virtnum ~= 0 and 1 or 0, vim.v.relnum, opt_flags)
   local hit = result_cache[key]
@@ -272,6 +344,8 @@ function M.click_fold()
       vim.cmd('silent! normal! za')
     end
   end)
+  -- 折叠开合后 fold 列可能整屏消失，显式重算 statuscolumn 宽度让它收窄
+  pcall(vim.api.nvim__redraw, { win = pos.winid, statuscolumn = true })
 end
 
 -- 挂载后台资源：git autocmd（异步 diff 刷新）、缓存刷新 timer、BufWipeout 清理 augroup
@@ -280,10 +354,28 @@ local function start_resources()
 
   refresh_timer = assert((vim.uv or vim.loop).new_timer())
   refresh_timer:start(config.refresh, config.refresh, function()
-    sign_cache, result_cache = {}, {}
+    sign_cache, result_cache, fold_has_cache = {}, {}, {}
   end)
 
   statuscol_augroup = vim.api.nvim_create_augroup('VVStatusCol', { clear = true })
+
+  -- 诊断增减会改变 sign 段宽度。statuscolumn 宽度「只随重绘自动变宽、不自动变窄」，
+  -- 诊断清空后必须显式 nvim__redraw{statuscolumn} 才会把 sign 列收回去（否则卡在宽态）
+  -- 变宽本就随自然重绘按需发生，这里只为「收窄」兜底，故用 debounce 合并打字时 LSP 成串
+  -- 重发诊断的抖动——延迟收窄完全无感，却省掉每次 republish 都重算一遍 gutter 宽度
+  local diag_redraw
+  diag_redraw, diag_redraw_cancel = require('vv-utils.timer').debounce(function()
+    result_cache = {}
+    pcall(vim.api.nvim__redraw, { statuscolumn = true })
+  end, 80)
+  vim.api.nvim_create_autocmd('DiagnosticChanged', {
+    group = statuscol_augroup,
+    callback = function(args)
+      sign_cache[args.buf] = nil
+      diag_redraw()
+    end,
+  })
+
   vim.api.nvim_create_autocmd('BufWipeout', {
     group = statuscol_augroup,
     callback = function(args)
@@ -303,6 +395,11 @@ end
 local function stop_resources()
   require('vv-statuscol.git').detach()
 
+  if diag_redraw_cancel then
+    diag_redraw_cancel()
+    diag_redraw_cancel = nil
+  end
+
   if refresh_timer then
     refresh_timer:stop()
     if not refresh_timer:is_closing() then refresh_timer:close() end
@@ -314,7 +411,7 @@ local function stop_resources()
     statuscol_augroup = nil
   end
 
-  sign_cache, result_cache = {}, {}
+  sign_cache, result_cache, fold_has_cache = {}, {}, {}
 end
 
 function M.enable()
@@ -346,8 +443,8 @@ function M.setup(opts)
   require('vv-statuscol.hl').setup()
   require('vv-statuscol.git').configure(config.git)
 
-  -- foldcolumn='1' 作为 fold 段的启用 flag（FFI 已绕开实际渲染依赖）
-  if vim.o.foldcolumn == '0' then vim.opt.foldcolumn = '1' end
+  -- fold 段由 statuscolumn 内 FFI 自绘，原生 foldcolumn 不参与渲染只会白占 1 列，故关掉
+  vim.opt.foldcolumn = '0'
 
   -- 后台资源（git autocmd / 刷新 timer / BufWipeout augroup）的挂载与释放统一交给
   -- enable()/disable() 管理，确保 disable 后真正停掉 git diff 与重绘（见 #71）

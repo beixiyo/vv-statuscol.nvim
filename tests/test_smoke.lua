@@ -154,28 +154,33 @@ local revparse_cb = git_src:match('root_async.-vim%.system') or ''
 assert_match('#69 rev-parse 回调有 is_loaded 守卫', revparse_cb, 'nvim_buf_is_loaded%(bufnr%)')
 
 -- =============================================
--- FIX 6 (#70): result_cache 键纳入影响渲染的窗口选项
+-- FIX 6 (动态宽度): result_cache 键纳入影响「渲染宽度」的因素
+--   行号段：number / relativenumber；各槽是否收成 0 宽：has_mark / has_sign / git / fold
 -- =============================================
 local cached_fn = init_src:match('local function cached_get.-result_cache%[key%]') or ''
-assert_match('#70 缓存键纳入 signcolumn', cached_fn, 'signcolumn')
-assert_match('#70 缓存键纳入 number', cached_fn, 'wo%.number')
-assert_match('#70 缓存键纳入 relativenumber', cached_fn, 'wo%.relativenumber')
-assert_match('#70 缓存键纳入 foldcolumn', cached_fn, 'foldcolumn')
+assert_match('缓存键纳入 number', cached_fn, 'wo%.number')
+assert_match('缓存键纳入 relativenumber', cached_fn, 'wo%.relativenumber')
+assert_match('缓存键纳入 has_mark', cached_fn, 'has_mark')
+assert_match('缓存键纳入 has_sign', cached_fn, 'has_sign')
+assert_match('缓存键纳入 git 存在性', cached_fn, 'git_has')
+assert_match('缓存键纳入 fold 结构存在性', cached_fn, 'win_has_fold')
 
--- 逻辑：复刻 opt_flags 公式，验证四个选项任一变化都改变键
-local function opt_flags(sc, nu, rnu, fdc)
-  return string.format('%d%d%d%d',
-    sc ~= 'no' and 1 or 0, nu and 1 or 0, rnu and 1 or 0, fdc == '0' and 1 or 0)
+-- 逻辑：复刻 opt_flags 公式，验证六个因素任一变化都改变键
+local function opt_flags(nu, rnu, mark, sign, git, fold)
+  return string.format('%d%d%d%d%d%d',
+    nu and 1 or 0, rnu and 1 or 0, mark and 1 or 0, sign and 1 or 0, git and 1 or 0, fold and 1 or 0)
 end
-local base = opt_flags('yes', true, false, '1')
-assert_eq('#70 signcolumn=no 改变键', opt_flags('no', true, false, '1') ~= base, true)
-assert_eq('#70 nonumber 改变键', opt_flags('yes', false, false, '1') ~= base, true)
-assert_eq('#70 relativenumber 改变键', opt_flags('yes', true, true, '1') ~= base, true)
-assert_eq('#70 foldcolumn=0 改变键', opt_flags('yes', true, false, '0') ~= base, true)
+local base = opt_flags(true, false, false, false, false, false)
+assert_eq('nonumber 改变键', opt_flags(false, false, false, false, false, false) ~= base, true)
+assert_eq('relativenumber 改变键', opt_flags(true, true, false, false, false, false) ~= base, true)
+assert_eq('有 mark 改变键', opt_flags(true, false, true, false, false, false) ~= base, true)
+assert_eq('有 sign 改变键', opt_flags(true, false, false, true, false, false) ~= base, true)
+assert_eq('有 git 改变键', opt_flags(true, false, false, false, true, false) ~= base, true)
+assert_eq('有 fold 改变键', opt_flags(true, false, false, false, false, true) ~= base, true)
 
 -- 新键仍保留 ':buf:' 子串，BufWipeout 前缀清理逻辑不受影响
 local sample_key = string.format('%d:%d:%d:%d:%d:%s', 100, 42, 5, 0, 3, base)
-assert_match('#70 新键仍含 :buf: 供 BufWipeout 清理', sample_key, ':42:')
+assert_match('新键仍含 :buf: 供 BufWipeout 清理', sample_key, ':42:')
 
 -- =============================================
 -- FIX 7 (#71): disable() 释放后台资源，enable() 重挂
