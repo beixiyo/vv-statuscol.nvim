@@ -313,8 +313,23 @@ local function cached_get()
     data.has_sign and 1 or 0,
     git_has and 1 or 0,
     win_has_fold(win) and 1 or 0)
-  local key = string.format('%d:%d:%d:%d:%d:%s',
-    win, buf, vim.v.lnum, vim.v.virtnum ~= 0 and 1 or 0, vim.v.relnum, opt_flags)
+
+  -- 折叠开合（za/zo/zc/zR/zM）是原生命令，既不脏化此行 statuscolumn、也无可靠的折叠变更
+  -- autocmd 可挂；render_fold 读的活折叠状态若不纳入键，开合后会命中上一帧的陈旧字形，
+  -- 直到 50ms timer 整体清空才纠正。这里按 render_fold 的同一判定折出 0/1/2 离散态并入键
+  -- （2=闭合、1=展开起始行、0=无字形），多一次 FFI fold_info（render_fold 本就要读，便宜）
+  local fi = fold_info(win, vim.v.lnum)
+  local fold_state = 0
+  if fi and fi.level ~= 0 then
+    if fi.lines > 0 then
+      fold_state = 2
+    elseif fi.start == vim.v.lnum then
+      fold_state = 1
+    end
+  end
+
+  local key = string.format('%d:%d:%d:%d:%d:%s:%d',
+    win, buf, vim.v.lnum, vim.v.virtnum ~= 0 and 1 or 0, vim.v.relnum, opt_flags, fold_state)
   local hit = result_cache[key]
   if hit then return hit end
   local ok, ret = pcall(M._get)
