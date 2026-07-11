@@ -1,12 +1,12 @@
--- 行级 git diff：按 buffer 跑 `git diff -U0 -- <path>`（工作树 vs 暂存区，即未暂存改动；
--- 故 stage 后该文件标记即清），产出 [lnum] -> 'A'|'C'|'D'
+-- 行级 git diff：同时显示 HEAD→index（staged）与 index→worktree（unstaged）
+-- staged marker 经 vv-utils.git 映射到当前 worktree buffer 行号，二者独立渲染，不互相覆盖
 -- 事件驱动刷新（BufReadPost / BufWritePost / FocusGained / TermClose / TermLeave /
 -- User VVGitStatusChanged），不做 per-keystroke 增量
 -- 非 git 仓库 / 未跟踪文件 → 返回空 markers，不打扰
 
 local M = {}
 
-local markers = {} --- @type table<integer, table<integer, 'A'|'C'|'D'>>
+local markers = {} --- @type table<integer, VVGitDiffLineSets>
 local pending = {} --- @type table<integer, boolean>
 
 -- text + hl 全部由 init.lua defaults.git 经 M.configure() 单向注入；
@@ -16,39 +16,6 @@ local GLYPHS = {}  ---@type table<'A'|'C'|'D', {text:string, hl:string}>
 ---@param cfg { A: {text:string, hl:string}, C: {text:string, hl:string}, D: {text:string, hl:string} }
 function M.configure(cfg)
   GLYPHS.A, GLYPHS.C, GLYPHS.D = cfg.A, cfg.C, cfg.D
-end
-
--- unified diff hunk header → 每行标记
--- 规则：
---   old=0, new>0  → 纯新增：new_start..new_start+new_len-1 标 A
---   new=0, old>0  → 纯删除：在 max(new_start,1) 标 D
---   old>0, new>0  → 修改：前 min 行标 C，超出部分按 new>old 补 A（new<old 的删除合并到最后 C）
----@param diff string
----@return table<integer, 'A'|'C'|'D'>
-function M.parse(diff)
-  local out = {}
-  for line in (diff or ''):gmatch('[^\n]+') do
-    local o_len_s, n_start_s, n_len_s =
-      line:match('^@@ %-%d+,?(%d*) %+(%d+),?(%d*) @@')
-    if n_start_s then
-      local old_len = tonumber(o_len_s == '' and '1' or o_len_s) or 1
-      local new_start = tonumber(n_start_s) or 0
-      local new_len = tonumber(n_len_s == '' and '1' or n_len_s) or 1
-
-      if new_len == 0 and old_len > 0 then
-        out[math.max(new_start, 1)] = 'D'
-      elseif new_len > 0 and old_len == 0 then
-        for i = new_start, new_start + new_len - 1 do out[i] = 'A' end
-      elseif new_len > 0 and old_len > 0 then
-        local overlap = math.min(old_len, new_len)
-        for i = new_start, new_start + overlap - 1 do out[i] = 'C' end
-        if new_len > old_len then
-          for i = new_start + overlap, new_start + new_len - 1 do out[i] = 'A' end
-        end
-      end
-    end
-  end
-  return out
 end
 
 ---@param bufnr integer
@@ -62,63 +29,38 @@ function M.refresh(bufnr)
     markers[bufnr] = nil
     return
   end
-  local root = vim.fs.dirname(path)
   pending[bufnr] = true
-
-  require('vv-utils.git').root_async(root, function(toplevel)
-    -- buffer 可能在 rev-parse 在途时被 wipe：失效则清理并退出，勿再 spawn diff
+  require('vv-utils.git').diff_line_sets(path, function(sets)
+    pending[bufnr] = nil
     if not vim.api.nvim_buf_is_loaded(bufnr) then
-      pending[bufnr] = nil
       markers[bufnr] = nil
       return
     end
-    if not toplevel then
-      pending[bufnr] = nil
-      markers[bufnr] = nil
-      return
-    end
-    vim.system(
-      { 'git', '-C', root, '--no-pager', 'diff', '-U0', '--no-color',
-        '--no-ext-diff', '--', path },
-      { text = true },
-      vim.schedule_wrap(function(d)
-        pending[bufnr] = nil
-        -- diff 在途时 buffer 已 wipe：清理 markers 后退出，避免写回陈旧数据 / 复用 bufnr 脏读
-        if not vim.api.nvim_buf_is_loaded(bufnr) then
-          markers[bufnr] = nil
-          return
-        end
-        if d.code ~= 0 then
-          markers[bufnr] = nil
-          return
-        end
-        markers[bufnr] = M.parse(d.stdout or '')
-        -- 让父模块 flush 字符串缓存，再触发 statuscolumn 重绘
-        local ok, parent = pcall(require, 'vv-statuscol')
-        if ok and parent._flush_cache then parent._flush_cache(bufnr) end
-        if vim.api.nvim_buf_is_loaded(bufnr) then
-          pcall(vim.api.nvim__redraw, { buf = bufnr, statuscolumn = true })
-        end
-      end))
+
+    markers[bufnr] = sets
+    local ok, parent = pcall(require, 'vv-statuscol')
+    if ok and parent._flush_cache then parent._flush_cache(bufnr) end
+    pcall(vim.api.nvim__redraw, { buf = bufnr, statuscolumn = true })
   end)
 end
 
 ---@param buf integer
 ---@param lnum integer
+---@param mode 'staged'|'unstaged'
 ---@return {text:string, hl:string}?
-function M.symbol(buf, lnum)
-  local m = markers[buf]
-  if not m then return nil end
-  local kind = m[lnum]
+function M.symbol(buf, lnum, mode)
+  local sets = markers[buf]
+  local kind = sets and sets[mode] and sets[mode][lnum]
   return kind and GLYPHS[kind]
 end
 
---- buffer 是否存在任意行级 git 标记（供 statuscolumn 决定 git 段宽度：有则 1 列，无则 0）
+---buffer 是否存在任意行级 git 标记（有则 staged / unstaged 双轨共 2 列，无则 0）
 ---@param buf integer
 ---@return boolean
 function M.has(buf)
-  local m = markers[buf]
-  return m ~= nil and next(m) ~= nil
+  local sets = markers[buf]
+  return sets ~= nil
+    and (next(sets.staged or {}) ~= nil or next(sets.unstaged or {}) ~= nil)
 end
 
 ---@param buf integer
@@ -150,7 +92,7 @@ function M.attach()
   --   * TermClose/TermLeave ————— 退出内嵌终端（ClaudeCode/Codex 在 :terminal 里直接跑 git，
   --                               焦点没离开 nvim 进程，FocusGained 不 fire）
   --   * User VVGitStatusChanged — vv-git 的 stage/commit/push 等操作完成后广播（即时）
-  -- commit 移动 HEAD 后 `git diff HEAD` 才会变，故订阅这些事件后 commit 的标记能及时清
+  -- commit 移动 HEAD 后 staged / unstaged 两侧都会变化，订阅后 marker 能及时重算
   vim.api.nvim_create_autocmd({ 'FocusGained', 'TermClose', 'TermLeave' }, {
     group = g,
     callback = function() refresh_visible() end,

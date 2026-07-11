@@ -33,7 +33,9 @@ local function assert_no_match(name, str, pattern)
   end
 end
 
-local root = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':h:h')
+local root = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
+vim.opt.runtimepath:prepend(vim.fn.fnamemodify(root, ':h') .. '/vv-utils.nvim')
+vim.opt.runtimepath:prepend(root)
 
 -- =============================================
 -- FIX 2: README git delete glyph 描述与代码一致
@@ -140,18 +142,42 @@ assert_eq('result_cache buf=99 未受影响', result_cache['200:99:5:0:3'], 'cac
 assert_eq('result_cache buf=99 未受影响(2)', result_cache['200:99:20:0:18'], 'cached_4')
 
 -- =============================================
--- FIX 5 (#69): git 异步回调在 buffer 失效后不写回 markers
+-- Git 双轨：同一行可同时显示 staged / unstaged
 -- =============================================
 local git_path = root .. '/lua/vv-statuscol/git.lua'
 local git_src = table.concat(vim.fn.readfile(git_path), '\n')
+local git = require('vv-statuscol.git')
+git.configure({
+  A = { text = 'A', hl = 'Added' },
+  C = { text = 'C', hl = 'Changed' },
+  D = { text = 'D', hl = 'Deleted' },
+})
 
--- diff 回调（写 markers 前）必须有 is_loaded 守卫
-local diff_cb = git_src:match('schedule_wrap.-M%.parse') or ''
-assert_match('#69 diff 回调写 markers 前有 is_loaded 守卫', diff_cb, 'nvim_buf_is_loaded%(bufnr%)')
+local tmp_dir = vim.fn.tempname()
+vim.fn.mkdir(tmp_dir, 'p')
+local both_path = tmp_dir .. '/both.txt'
+vim.fn.writefile({ 'one', 'two', 'three' }, both_path)
+vim.fn.system({ 'git', '-C', tmp_dir, 'init', '-q' })
+vim.fn.system({ 'git', '-C', tmp_dir, 'config', 'user.name', 'vv-statuscol test' })
+vim.fn.system({ 'git', '-C', tmp_dir, 'config', 'user.email', 'test@example.com' })
+vim.fn.system({ 'git', '-C', tmp_dir, 'add', 'both.txt' })
+vim.fn.system({ 'git', '-C', tmp_dir, 'commit', '-qm', 'initial' })
+vim.fn.writefile({ 'one', 'staged', 'two', 'three' }, both_path)
+vim.fn.system({ 'git', '-C', tmp_dir, 'add', 'both.txt' })
+vim.fn.writefile({ 'one', 'staged again', 'two', 'three' }, both_path)
 
--- rev-parse(root_async) 回调在 spawn diff 前也有 is_loaded 守卫
-local revparse_cb = git_src:match('root_async.-vim%.system') or ''
-assert_match('#69 rev-parse 回调有 is_loaded 守卫', revparse_cb, 'nvim_buf_is_loaded%(bufnr%)')
+local both_buf = vim.fn.bufadd(both_path)
+vim.fn.bufload(both_buf)
+git.refresh(both_buf)
+local dual_ready = vim.wait(3000, function()
+  return git.symbol(both_buf, 2, 'staged') ~= nil
+    and git.symbol(both_buf, 2, 'unstaged') ~= nil
+end, 10)
+assert_eq('同一行同时产生 staged / unstaged marker', dual_ready, true)
+assert_eq('staged 使用独立 Added 标记', git.symbol(both_buf, 2, 'staged').hl, 'Added')
+assert_eq('unstaged 使用独立 Changed 标记', git.symbol(both_buf, 2, 'unstaged').hl, 'Changed')
+vim.api.nvim_buf_delete(both_buf, { force = true })
+vim.fn.delete(tmp_dir, 'rf')
 
 -- =============================================
 -- FIX 6 (动态宽度): result_cache 键纳入影响「渲染宽度」的因素

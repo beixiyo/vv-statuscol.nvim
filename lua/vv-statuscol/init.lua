@@ -1,6 +1,6 @@
 -- vv-statuscol: 自定义状态列（mark / sign / 行号 / fold / git）
 --
--- 布局：[mark][sign][%= lnum][ ][fold][git][ ]
+-- 布局：[mark][sign][%= lnum][ ][fold][staged][unstaged][ ]
 --   各槽「按内容动态收宽」：整 buffer/窗口无该类内容时收成 0 宽（statuscolumn 自动收窄），
 --   无标记/诊断/改动/折叠的文件左栏只剩行号。原生 signcolumn/foldcolumn 均设为 no/0（不走
 --   statuscolumn 渲染，开着只白占列）。宽度判定都是「整体级」恒定（mark/sign/git 按 buffer、
@@ -260,14 +260,14 @@ function M._get()
 
   local data = buf_data(buf)
   local git = require('vv-statuscol.git')
-  local git_has = git.has(buf)
+  local git_has = not vim.w[win].vv_statuscol_git_disabled and git.has(buf)
 
   -- 动态槽宽：整 buffer/窗口无该类内容时收成 0 宽，statuscolumn 自动收窄（避免空文件白占左栏）
   -- 四段宽度都是「整体级」恒定（mark/sign/git 按 buffer、fold 按窗口折叠结构），故同屏每行宽度一致，
   -- 右对齐的行号不会因个别行多/少一格而左右跳
   local mark_w = data.has_mark and 2 or 0
   local sign_w = data.has_sign and 2 or 0
-  local git_w  = git_has and 1 or 0
+  local git_w  = git_has and 2 or 0
   local fold_w = win_has_fold(win) and 1 or 0
 
   -- wrapped / virtual line：只保留右对齐锚点 + 与正常行一致的左右留白（末尾留白同正常行）
@@ -276,7 +276,8 @@ function M._get()
   end
 
   local s = data.map[vim.v.lnum] or {}
-  local git_entry = git_has and git.symbol(buf, vim.v.lnum) or nil
+  local staged_entry = git_has and git.symbol(buf, vim.v.lnum, 'staged') or nil
+  local unstaged_entry = git_has and git.symbol(buf, vim.v.lnum, 'unstaged') or nil
 
   -- fold 槽恒定 1 格（有折叠结构时）：本行有字形则画字形，无则填空格，保证行号右侧宽度稳定
   -- 末尾恒留 1 格：fold/git 动态收 0 后原本靠 git 段空格充当的「字形↔正文」间距会消失，补一格右留白
@@ -292,7 +293,8 @@ function M._get()
     render_lnum(win),
     ' ',
     fold_part,
-    git_w > 0 and icon(git_entry, git_w) or '',
+    git_w > 0 and icon(staged_entry, 1) or '',
+    git_w > 0 and icon(unstaged_entry, 1) or '',
     ' ',
   }
   return "%@v:lua.require'vv-statuscol'.click_fold@" .. table.concat(parts) .. '%T'
@@ -305,7 +307,8 @@ local function cached_get()
   -- 不纳入键会在内容增减后命中陈旧串、宽度算错，直到 50ms timer 整体清空缓存才纠正
   local wo = vim.wo[win]
   local data = buf_data(buf)
-  local git_has = require('vv-statuscol.git').has(buf)
+  local git_has = not vim.w[win].vv_statuscol_git_disabled
+    and require('vv-statuscol.git').has(buf)
   local opt_flags = string.format('%d%d%d%d%d%d',
     wo.number and 1 or 0,
     wo.relativenumber and 1 or 0,

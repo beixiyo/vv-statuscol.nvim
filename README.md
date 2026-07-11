@@ -15,6 +15,16 @@
 
 [statuscol.nvim](https://github.com/luukvbaal/statuscol.nvim)（690 行）做了 sign 段的任意编排 + 多种 FFI 调用。本插件 ~200 行 snacks-style 足够，并在 snacks 思路上更进一步：**各段按内容动态收宽** + **内建 git line-level diff**（不依赖 gitsigns）
 
+## Git 双轨规则
+
+普通文件窗口同时显示两套互不覆盖的行级状态：Git 区域左列表示
+`HEAD → Index` 的 **staged** 改动，右列表示 `Index → Worktree` 的
+**unstaged** 改动。同一行暂存后再次修改时两列可以同时染色；staged 行号会先映射到
+当前 Worktree buffer，前方继续增删行也不会直接套用过期的 Index 行号
+
+`vv-git` 的 diff / result 窗口会通过 window-local 标记隐藏这两列：面板内由滚动条
+marker 与 diff 染色表达改动已经足够；同一 buffer 在普通编辑窗口中的双轨不受影响
+
 ### 核心特性：按内容动态收宽
 
 与多数状态列（含 snacks）的「固定宽度、空槽填空格」不同，本插件把 mark / sign / git / fold **每一段都做成动态宽度**：
@@ -28,7 +38,7 @@
 ### 布局
 
 ```
-[mark] [sign] %= [lnum] [ ] [fold] [git] [ ]      ← 每段 0 或满宽，按内容收放
+[mark] [sign] %= [lnum] [ ] [fold] [staged][unstaged] [ ]
 ```
 
 ## 安装
@@ -75,7 +85,9 @@
 
 ### 内建 Git diff
 
-事件驱动：`BufReadPost` / `BufWritePost` / `FocusGained` 触发 `git diff -U0 HEAD` 异步解析。非 git 仓库 / 未跟踪文件静默不显示。编辑期间 gutter 不实时更新，直到 `:w`
+事件驱动：`BufReadPost` / `BufWritePost` / `FocusGained` 等事件并行解析
+`git diff --cached` 与 `git diff`。非 Git 仓库 / 未跟踪文件静默不显示；编辑期间 gutter
+不实时更新，直到 `:w`
 
 ### 关于动态收窄的实现
 
