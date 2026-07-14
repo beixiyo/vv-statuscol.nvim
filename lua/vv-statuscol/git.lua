@@ -39,8 +39,7 @@ function M.refresh(bufnr)
 
     markers[bufnr] = sets
     local ok, parent = pcall(require, 'vv-statuscol')
-    if ok and parent._flush_cache then parent._flush_cache(bufnr) end
-    pcall(vim.api.nvim__redraw, { buf = bufnr, statuscolumn = true })
+    if ok and parent.refresh then parent.refresh(bufnr) end
   end)
 end
 

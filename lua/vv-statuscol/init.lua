@@ -173,6 +173,18 @@ function M._flush_cache(buf)
   result_cache = {}
 end
 
+---清除指定 buffer 的 sign 缓存并立即刷新状态列
+---@param buf? integer @default 当前 buffer
+function M.refresh(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  M._flush_cache(buf)
+  pcall(vim.api.nvim__redraw, {
+    buf = buf,
+    statuscolumn = true,
+    flush = true,
+  })
+end
+
 -- ======================= Renderers =======================
 ---@param entry? {text:string, hl?:string}
 ---@param width integer

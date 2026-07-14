@@ -108,3 +108,5 @@ statuscolumn 的宽度「只随重绘自动**变宽**、不自动**变窄**」�
 **收窄**则靠事件精确派发：git 刷新、`DiagnosticChanged`（经 `vv-utils.timer.debounce` 合并打字时 LSP 的成串 republish）、折叠开合（鼠标点击 + ufo `zR`/`zM`/`zr`/`zm`）后
 
 显式 `nvim__redraw{statuscolumn}` 强制重算宽度。mark 无对应事件，由 `refresh` 周期（默认 50ms）的缓存心跳兜底
+
+直接放置 sign 的集成可调用 `require('vv-statuscol').refresh(buf)`，它会清除该 buffer 的 sign 缓存并立即刷新状态列

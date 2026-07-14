@@ -98,3 +98,5 @@ On `BufReadPost`, `BufWritePost`, `FocusGained`, and related events, the plugin 
 Neovim automatically grows a status column during redraw but does not shrink it. Growth therefore uses normal redraws. Shrinking is dispatched precisely after Git refreshes, `DiagnosticChanged` events debounced through `vv-utils.timer.debounce`, and fold changes caused by mouse actions or ufo mappings such as `zR`, `zM`, `zr`, and `zm`.
 
 Those events call `nvim__redraw{statuscolumn}` to force width recalculation. Marks have no corresponding event, so the sign-cache heartbeat controlled by `refresh` provides the fallback.
+
+Integrations that place signs directly can call `require('vv-statuscol').refresh(buf)`. It invalidates the buffer's sign cache and flushes the status-column redraw immediately.

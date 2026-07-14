@@ -222,6 +222,39 @@ assert_match('#71 disable 调用 stop_resources', init_src, 'stop_resources%(%)'
 assert_match('#71 enable 调用 start_resources', init_src, 'start_resources%(%)')
 
 -- =============================================
+-- Sign 变化：refresh() 必须同步失效缓存并立即刷新
+-- =============================================
+local statuscol = require('vv-statuscol')
+statuscol.setup({ refresh = 1000 })
+
+local sign_buf = vim.api.nvim_get_current_buf()
+local sign_win = vim.api.nvim_get_current_win()
+vim.api.nvim_buf_set_lines(sign_buf, 0, -1, false, { 'one', 'two', 'three' })
+vim.fn.sign_define('VVStatusColTestSign', { text = 'T', texthl = 'DiagnosticInfo' })
+
+statuscol.refresh(sign_buf)
+local before_sign = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+  winid = sign_win,
+  use_statuscol_lnum = 2,
+}).str
+
+vim.fn.sign_place(0, 'vv-statuscol-test', 'VVStatusColTestSign', sign_buf, {
+  lnum = 2,
+  priority = 50,
+})
+statuscol.refresh(sign_buf)
+
+local after_sign = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+  winid = sign_win,
+  use_statuscol_lnum = 2,
+}).str
+assert_eq('refresh 前状态列没有测试 sign', before_sign:find('T', 1, true), nil)
+assert_eq('refresh 后立即读取到测试 sign', after_sign:find('T', 1, true) ~= nil, true)
+
+vim.fn.sign_unplace('vv-statuscol-test', { buffer = sign_buf })
+statuscol.disable()
+
+-- =============================================
 -- 汇总
 -- =============================================
 print(('\n总计: %d 通过, %d 失败'):format(passed, failed))
