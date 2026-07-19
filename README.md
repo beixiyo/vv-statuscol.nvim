@@ -59,11 +59,8 @@ Set native `signcolumn` to `no` and `foldcolumn` to `0`, because they render out
   event = { 'BufReadPost', 'BufNewFile' },
   opts = {
     enabled = true,
-    ft_ignore = {
-      'dashboard', 'vv-explorer', 'vv-task-panel', 'trouble',
-      'toggleterm', 'help', 'lazy', 'mason', 'checkhealth', 'qf',
-    },
-    bt_ignore = { 'terminal', 'nofile', 'prompt' },
+    ft_ignore = {},
+    bt_ignore = { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' },
     refresh = 50,
     fold = { open = '', close = '' },
     git = {
@@ -80,14 +77,16 @@ Set native `signcolumn` to `no` and `foldcolumn` to `0`, because they render out
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | Global switch |
-| `ft_ignore` | `string[]` | `{ 'dashboard', ... }` | Filetypes that do not render the status column |
-| `bt_ignore` | `string[]` | `{ 'terminal', 'nofile', 'prompt' }` | Buftypes that do not render it |
+| `ft_ignore` | `string[]` | `{}` | Filetypes that do not render the status column |
+| `bt_ignore` | `string[]` | `{ 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }` | Buftypes that do not render it |
 | `refresh` | `integer` | `50` | Sign-cache flush interval in milliseconds |
 | `fold.open` | `string` | `` | Icon for a foldable start line |
 | `fold.close` | `string` | `` | Icon for a closed fold |
 | `git.A` | `{ text, hl }` | `{ '▎', 'VVGitAdded' }` | Added-line glyph and highlight |
 | `git.C` | `{ text, hl }` | `{ '▎', 'VVGitModified' }` | Changed-line glyph and highlight |
 | `git.D` | `{ text, hl }` | `{ '󰆐', 'VVGitDeleted' }` | Deleted-line glyph and highlight |
+
+User-provided `ft_ignore` and `bt_ignore` lists replace their defaults rather than extending them. The default buftype filter covers standard special buffers without coupling vv-statuscol to specific UI plugins; use `ft_ignore` only for additional filetype-specific exceptions.
 
 ### Built-in Git diff
 

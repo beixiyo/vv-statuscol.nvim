@@ -182,7 +182,10 @@ assert_match('#71 enable 调用 start_resources', init_src, 'start_resources%(%)
 -- Sign 变化：refresh() 必须同步失效缓存并立即刷新
 -- =============================================
 local statuscol = require('vv-statuscol')
-statuscol.setup({ refresh = 1000 })
+statuscol.setup({
+  refresh = 1000,
+  ft_ignore = { 'custom-ui' },
+})
 
 local sign_buf = vim.api.nvim_get_current_buf()
 local sign_win = vim.api.nvim_get_current_win()
@@ -207,6 +210,49 @@ local after_sign = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
 }).str
 assert_eq('refresh 前状态列没有测试 sign', before_sign:find('T', 1, true), nil)
 assert_eq('refresh 后立即读取到测试 sign', after_sign:find('T', 1, true) ~= nil, true)
+
+local git_module = require('vv-statuscol.git')
+local original_git_has = git_module.has
+git_module.has = function() error('ignored buffers must return before Git lookup') end
+
+vim.bo[sign_buf].filetype = 'custom-ui'
+statuscol.refresh(sign_buf)
+local ignored_ft = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+  winid = sign_win,
+  use_statuscol_lnum = 2,
+}).str
+assert_eq('外部 ft_ignore 整体覆盖后生效', ignored_ft, '')
+
+vim.bo[sign_buf].filetype = 'lua'
+for _, bt in ipairs({ 'help', 'nofile', 'prompt', 'quickfix' }) do
+  vim.bo[sign_buf].buftype = bt
+  statuscol.refresh(sign_buf)
+  local ignored = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+    winid = sign_win,
+    use_statuscol_lnum = 2,
+  }).str
+  assert_eq('buftype=' .. bt .. ' 不渲染状态列', ignored, '')
+end
+
+vim.bo[sign_buf].buftype = ''
+vim.cmd('new')
+vim.cmd('terminal true')
+local terminal_win = vim.api.nvim_get_current_win()
+local ignored_terminal = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+  winid = terminal_win,
+  use_statuscol_lnum = 1,
+}).str
+assert_eq('真实 terminal buffer 不渲染状态列', ignored_terminal, '')
+vim.cmd('close!')
+
+git_module.has = original_git_has
+vim.bo[sign_buf].filetype = 'dashboard'
+statuscol.refresh(sign_buf)
+local replaced_defaults = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+  winid = sign_win,
+  use_statuscol_lnum = 2,
+}).str
+assert_eq('外部 ft_ignore 不与旧默认 filetype 合并', replaced_defaults:find('T', 1, true) ~= nil, true)
 
 vim.fn.sign_unplace('vv-statuscol-test', { buffer = sign_buf })
 statuscol.disable()

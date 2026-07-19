@@ -62,11 +62,8 @@ marker 与 diff 染色表达改动已经足够；同一 buffer 在普通编辑�
   event = { 'BufReadPost', 'BufNewFile' },
   opts = {
     enabled = true,
-    ft_ignore = {                -- 不渲染状态列的 filetype
-      'dashboard', 'vv-explorer', 'vv-task-panel', 'trouble',
-      'toggleterm', 'help', 'lazy', 'mason', 'checkhealth', 'qf',
-    },
-    bt_ignore = { 'terminal', 'nofile', 'prompt' },
+    ft_ignore = {},              -- 需要额外排除的 filetype
+    bt_ignore = { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' },
     refresh = 50,                -- sign 缓存 flush 周期（ms）
     fold = {
       open  = '',              -- 可折叠起始行图标（NerdFont caret-down）
@@ -86,14 +83,16 @@ marker 与 diff 染色表达改动已经足够；同一 buffer 在普通编辑�
 | 选项 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `enabled` | `boolean` | `true` | 全局开关 |
-| `ft_ignore` | `string[]` | `{ 'dashboard', ... }` | 这些 filetype 的 buffer 不渲染状态列 |
-| `bt_ignore` | `string[]` | `{ 'terminal', 'nofile', 'prompt' }` | 同上，按 buftype |
+| `ft_ignore` | `string[]` | `{}` | 这些 filetype 的 buffer 不渲染状态列 |
+| `bt_ignore` | `string[]` | `{ 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }` | 同上，按 buftype |
 | `refresh` | `integer` | `50` | sign 缓存 flush 周期（ms） |
 | `fold.open` | `string` | `` | 可折叠起始行的图标 |
 | `fold.close` | `string` | `` | 已折叠行的图标 |
 | `git.A` | `{ text, hl }` | `{ '▎', 'VVGitAdded' }` | 新增行 glyph + 高亮组 |
 | `git.C` | `{ text, hl }` | `{ '▎', 'VVGitModified' }` | 修改行 |
 | `git.D` | `{ text, hl }` | `{ '󰆐', 'VVGitDeleted' }` | 删除行 |
+
+外部传入的 `ft_ignore` 与 `bt_ignore` 列表会整体覆盖默认值，不会与默认列表合并。默认按 buftype 覆盖 Neovim 的标准特殊 buffer，避免 vv-statuscol 依赖具体 UI 插件名称；仅在需要额外按 filetype 排除时配置 `ft_ignore`
 
 ### 内建 Git diff
 

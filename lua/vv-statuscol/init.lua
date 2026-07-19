@@ -58,19 +58,16 @@ end
 
 ---@class VVStatusColConfig
 ---@field enabled boolean 是否启用状态列 @default true
----@field ft_ignore string[] 忽略的文件类型列表 @default { 'dashboard', 'vv-explorer', ... }
----@field bt_ignore string[] 忽略的 buftype 列表 @default { 'terminal', 'nofile', 'prompt' }
+---@field ft_ignore string[] 忽略的 filetype 列表；外部传入时整体覆盖默认值 @default {}
+---@field bt_ignore string[] 忽略的 buftype 列表；外部传入时整体覆盖默认值 @default { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }
 ---@field refresh integer 缓存刷新间隔（ms） @default 50
 ---@field fold { open: string, close: string } 折叠图标 @default { open = '', close = '' }
 ---@field git table<string, { text: string, hl: string }> Git 行级 diff 图标与高亮 @default { A = { text = '▎', hl = 'VVGitAdded' }, ... }
 
 local defaults = {
   enabled = true,
-  ft_ignore = {
-    'dashboard', 'vv-explorer', 'vv-task-panel', 'trouble',
-    'toggleterm', 'help', 'lazy', 'mason', 'checkhealth', 'qf',
-  },
-  bt_ignore = { 'terminal', 'nofile', 'prompt' },
+  ft_ignore = {},
+  bt_ignore = { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' },
   refresh = 50,
   fold = {
     open  = '',
@@ -315,6 +312,8 @@ end
 local function cached_get()
   local win = vim.g.statusline_winid
   local buf = vim.api.nvim_win_get_buf(win)
+  if is_ignored(buf) then return '' end
+
   -- 渲染宽度依赖：number/relativenumber（行号段）+ 各槽是否有内容（mark/sign/git/fold 决定满宽 or 0）
   -- 不纳入键会在内容增减后命中陈旧串、宽度算错，直到 50ms timer 整体清空缓存才纠正
   local wo = vim.wo[win]
