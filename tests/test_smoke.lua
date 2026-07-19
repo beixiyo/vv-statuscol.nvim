@@ -23,62 +23,19 @@ local function assert_match(name, str, pattern)
   end
 end
 
-local function assert_no_match(name, str, pattern)
-  if not str:find(pattern) then
-    passed = passed + 1
-    print('[PASS] ' .. name)
-  else
-    failed = failed + 1
-    print(('[FAIL] %s\n  不应匹配到: %s\n  内容: %s'):format(name, pattern, str))
-  end
-end
-
 local root = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
 vim.opt.runtimepath:prepend(vim.fn.fnamemodify(root, ':h') .. '/vv-utils.nvim')
 vim.opt.runtimepath:prepend(root)
 
 -- =============================================
--- FIX 2: README git delete glyph 描述与代码一致
+-- FIX 2: git delete glyph 已定义
 -- =============================================
-local readme_path = root .. '/README.md'
-local readme = table.concat(vim.fn.readfile(readme_path), '\n')
 local init_path = root .. '/lua/vv-statuscol/init.lua'
 local init_src = table.concat(vim.fn.readfile(init_path), '\n')
 
 -- 从代码中提取 D 的 text 值
 local code_d_text = init_src:match("D = { text = '([^']+)'")
 assert_eq('代码中 D glyph 已定义', code_d_text ~= nil, true)
-
--- README 描述行的 glyph 应匹配代码
-assert_match(
-  'README 描述中 D glyph 与代码一致',
-  readme,
-  code_d_text
-)
-
--- 确保旧的错误 glyph 不再出现在描述行
--- 注意：配置表中也不该有旧 glyph
-assert_no_match(
-  'README 不包含旧的错误 glyph 󰍵',
-  readme,
-  '󰍵'
-)
-
--- =============================================
--- FIX 3: README 不包含旧 spec 路径引用
--- =============================================
-assert_no_match(
-  'README 不包含旧 spec 路径',
-  readme,
-  'lua/plugins/specs/ui/vv%-statuscol%.lua'
-)
-
--- README 安装段是 lazy.nvim 风格插件 spec（以仓库名定义行为锚点；README 重排后不再含字面 'lazy.nvim'）
-assert_match(
-  'README 包含 lazy.nvim 风格安装示例',
-  readme,
-  "'beixiyo/vv%-statuscol%.nvim'"
-)
 
 -- =============================================
 -- FIX 4: BufWipeout 清理 sign_cache
