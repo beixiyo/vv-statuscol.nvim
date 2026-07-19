@@ -6,7 +6,7 @@
 
 local M = {}
 
-local markers = {} --- @type table<integer, VVGitDiffLineSets>
+local markers = {} --- @type table<integer, vv-utils.git.DiffLineSets>
 local pending = {} --- @type table<integer, boolean>
 
 -- text + hl 全部由 init.lua defaults.git 经 M.configure() 单向注入；
