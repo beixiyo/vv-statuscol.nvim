@@ -47,8 +47,10 @@ Set native `signcolumn` to `no` and `foldcolumn` to `0`, because they render out
 ### Layout
 
 ```text
-[mark] [sign] %= [lnum] [ ] [fold] [staged][unstaged] [ ]
+[mark] [sign] %= [lnum] [ ] [staged][unstaged][fold] [ ]
 ```
+
+The fold cell is intentionally placed after the Git cells. When Neovim reaches the maximum status-column width, content is truncated from the left, so the fold open/close icon remains visible before Git markers.
 
 ## Installation
 

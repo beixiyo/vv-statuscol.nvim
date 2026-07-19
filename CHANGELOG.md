@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1] - 2026-07-19
+
+### Changed
+
+- 默认 `ft_ignore` 改为空列表，不再耦合 dashboard、文件树、任务面板等具体插件；`bt_ignore` 统一覆盖 `help`、`nofile`、`prompt`、`quickfix` 与 `terminal` 标准特殊 buffer，外部列表仍按整体覆盖语义工作
+- 忽略判断提前到 sign、Git 与 fold 数据读取之前，特殊 buffer 不再执行无意义的状态列扫描
+- fold 槽移到 staged / unstaged Git 槽之后，statuscolumn 达到宽度上限时优先保留折叠开合图标
+
 ## [0.1.0] - 2026-07-13
 
 ### Changed

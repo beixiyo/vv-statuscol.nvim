@@ -1,6 +1,6 @@
 -- vv-statuscol: 自定义状态列（mark / sign / 行号 / fold / git）
 --
--- 布局：[mark][sign][%= lnum][ ][fold][staged][unstaged][ ]
+-- 布局：[mark][sign][%= lnum][ ][staged][unstaged][fold][ ]
 --   各槽「按内容动态收宽」：整 buffer/窗口无该类内容时收成 0 宽（statuscolumn 自动收窄），
 --   无标记/诊断/改动/折叠的文件左栏只剩行号。原生 signcolumn/foldcolumn 均设为 no/0（不走
 --   statuscolumn 渲染，开着只白占列）。宽度判定都是「整体级」恒定（mark/sign/git 按 buffer、
@@ -301,9 +301,10 @@ function M._get()
     sign_w > 0 and icon(s.sign, sign_w) or '',
     render_lnum(win),
     ' ',
-    fold_part,
     git_w > 0 and icon(staged_entry, 1) or '',
     git_w > 0 and icon(unstaged_entry, 1) or '',
+    -- statuscolumn 超过最大宽度时从左侧开始截断；fold 放在最右端，使其优先于 Git 保留
+    fold_part,
     ' ',
   }
   return "%@v:lua.require'vv-statuscol'.click_fold@" .. table.concat(parts) .. '%T'

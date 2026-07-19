@@ -133,8 +133,6 @@ end, 10)
 assert_eq('同一行同时产生 staged / unstaged marker', dual_ready, true)
 assert_eq('staged 使用独立 Added 标记', git.symbol(both_buf, 2, 'staged').hl, 'Added')
 assert_eq('unstaged 使用独立 Changed 标记', git.symbol(both_buf, 2, 'unstaged').hl, 'Changed')
-vim.api.nvim_buf_delete(both_buf, { force = true })
-vim.fn.delete(tmp_dir, 'rf')
 
 -- =============================================
 -- FIX 6 (动态宽度): result_cache 键纳入影响「渲染宽度」的因素
@@ -185,6 +183,12 @@ local statuscol = require('vv-statuscol')
 statuscol.setup({
   refresh = 1000,
   ft_ignore = { 'custom-ui' },
+  fold = { open = 'F', close = 'X' },
+  git = {
+    A = { text = 'A', hl = 'Added' },
+    C = { text = 'C', hl = 'Changed' },
+    D = { text = 'D', hl = 'Deleted' },
+  },
 })
 
 local sign_buf = vim.api.nvim_get_current_buf()
@@ -210,6 +214,50 @@ local after_sign = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
 }).str
 assert_eq('refresh 前状态列没有测试 sign', before_sign:find('T', 1, true), nil)
 assert_eq('refresh 后立即读取到测试 sign', after_sign:find('T', 1, true) ~= nil, true)
+
+-- =============================================
+-- fold 优先级：与 Git 同行且宽度不足时仍保留折叠图标
+-- =============================================
+vim.api.nvim_win_set_buf(sign_win, both_buf)
+vim.api.nvim_win_call(sign_win, function()
+  vim.wo.number = true
+  vim.wo.foldenable = true
+  vim.wo.foldmethod = 'manual'
+  vim.cmd('2,3fold')
+  vim.api.nvim_win_set_cursor(sign_win, { 2, 0 })
+  vim.cmd('normal! zo')
+end)
+statuscol.refresh(both_buf)
+
+local fold_open_full = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+  winid = sign_win,
+  use_statuscol_lnum = 2,
+}).str
+local fold_open_narrow = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+  winid = sign_win,
+  use_statuscol_lnum = 2,
+  maxwidth = 4,
+}).str
+local git_pos = math.max(
+  fold_open_full:find('A', 1, true) or 0,
+  fold_open_full:find('C', 1, true) or 0
+)
+local open_pos = fold_open_full:find('F', 1, true) or 0
+assert_eq('fold open 图标位于 Git 标记之后', git_pos > 0 and open_pos > git_pos, true)
+assert_eq('statuscolumn 受限时保留 fold open 图标', fold_open_narrow:find('F', 1, true) ~= nil, true)
+
+vim.api.nvim_win_call(sign_win, function() vim.cmd('normal! zc') end)
+statuscol.refresh(both_buf)
+local fold_close_narrow = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+  winid = sign_win,
+  use_statuscol_lnum = 2,
+  maxwidth = 4,
+}).str
+assert_eq('statuscolumn 受限时保留 fold close 图标', fold_close_narrow:find('X', 1, true) ~= nil, true)
+
+vim.api.nvim_win_set_buf(sign_win, sign_buf)
+vim.api.nvim_buf_delete(both_buf, { force = true })
+vim.fn.delete(tmp_dir, 'rf')
 
 local git_module = require('vv-statuscol.git')
 local original_git_has = git_module.has

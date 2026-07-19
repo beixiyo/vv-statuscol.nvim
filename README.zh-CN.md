@@ -50,8 +50,10 @@ marker 与 diff 染色表达改动已经足够；同一 buffer 在普通编辑�
 ### 布局
 
 ```
-[mark] [sign] %= [lnum] [ ] [fold] [staged][unstaged] [ ]
+[mark] [sign] %= [lnum] [ ] [staged][unstaged][fold] [ ]
 ```
+
+fold 槽刻意放在 Git 槽之后。Neovim 达到 statuscolumn 最大宽度时会从左侧开始截断，因此空间不足时优先保留 fold 开合图标，Git 标记先让位
 
 ## 安装
 
