@@ -7,6 +7,10 @@
 - 默认 `ft_ignore` 改为空列表，不再耦合 dashboard、文件树、任务面板等具体插件；`bt_ignore` 统一覆盖 `help`、`nofile`、`prompt`、`quickfix` 与 `terminal` 标准特殊 buffer，外部列表仍按整体覆盖语义工作
 - 忽略判断提前到 sign、Git 与 fold 数据读取之前，特殊 buffer 不再执行无意义的状态列扫描
 - fold 槽移到 staged / unstaged Git 槽之后，statuscolumn 达到宽度上限时优先保留折叠开合图标
+- 新增 `layout.left` / `layout.right` 配置，可排序或隐藏内置槽位，并通过 `{ segment, on_click }` 为单个槽位注册点击回调
+- 点击事件统一提供槽位、窗口、buffer、位置、按钮、点击次数与修饰键上下文；回调返回 `true` 可停止传播，默认折叠行为仅响应左键单击
+- 将 FFI 折叠读取、sign 缓存、布局、渲染与点击分发从入口拆为独立模块，`init.lua` 只保留公开 API、配置和资源生命周期
+- 删除不再使用的 `click_fold()` 与 `_flush_cache()` 内部入口；外部集成统一使用 `on_click()` 与 `refresh()`
 
 ## [0.1.0] - 2026-07-13
 

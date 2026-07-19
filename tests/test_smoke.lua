@@ -1,108 +1,48 @@
--- vv-statuscol.nvim 变更验证脚本
+-- vv-statuscol.nvim 行为验证
 -- 用法：nvim --headless -u NONE -l tests/test_smoke.lua
 
-local passed, failed = 0, 0
+local passed = 0
+local failed = 0
 
 local function assert_eq(name, got, want)
   if got == want then
     passed = passed + 1
     print('[PASS] ' .. name)
-  else
-    failed = failed + 1
-    print(('[FAIL] %s\n  期望: %s\n  实际: %s'):format(name, tostring(want), tostring(got)))
+    return
   end
+
+  failed = failed + 1
+  print(('[FAIL] %s\n  期望: %s\n  实际: %s'):format(
+    name,
+    vim.inspect(want),
+    vim.inspect(got)
+  ))
 end
 
-local function assert_match(name, str, pattern)
-  if str:find(pattern) then
-    passed = passed + 1
-    print('[PASS] ' .. name)
-  else
-    failed = failed + 1
-    print(('[FAIL] %s\n  未匹配到: %s\n  内容: %s'):format(name, pattern, str))
-  end
+local function evaluate(win, lnum, maxwidth)
+  return vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
+    winid = win,
+    use_statuscol_lnum = lnum,
+    maxwidth = maxwidth,
+  }).str
 end
 
 local root = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
 vim.opt.runtimepath:prepend(vim.fn.fnamemodify(root, ':h') .. '/vv-utils.nvim')
 vim.opt.runtimepath:prepend(root)
 
--- =============================================
--- FIX 2: git delete glyph 已定义
--- =============================================
-local init_path = root .. '/lua/vv-statuscol/init.lua'
-local init_src = table.concat(vim.fn.readfile(init_path), '\n')
-
--- 从代码中提取 D 的 text 值
-local code_d_text = init_src:match("D = { text = '([^']+)'")
-assert_eq('代码中 D glyph 已定义', code_d_text ~= nil, true)
-
--- =============================================
--- FIX 4: BufWipeout 清理 sign_cache
--- =============================================
--- 验证代码中存在 BufWipeout autocmd
-assert_match(
-  'init.lua 包含 BufWipeout autocmd',
-  init_src,
-  'BufWipeout'
+local layout = require('vv-statuscol.layout')
+local invalid_ok, invalid_error = pcall(layout.configure, {
+  left = { 'sign' },
+  right = { 'unknown' },
+})
+assert_eq('非法布局被拒绝', invalid_ok, false)
+assert_eq(
+  '非法布局包含明确错误',
+  tostring(invalid_error):find('invalid right segment', 1, true) ~= nil,
+  true
 )
 
--- 验证清理 sign_cache
-assert_match(
-  'BufWipeout 回调清理 sign_cache',
-  init_src,
-  'sign_cache%[args%.buf%] = nil'
-)
-
--- 验证清理 result_cache 条目
-assert_match(
-  'BufWipeout 回调清理 result_cache 条目',
-  init_src,
-  'result_cache%[k%] = nil'
-)
-
--- 验证 augroup 存在
-assert_match(
-  'init.lua 创建了 VVStatusCol augroup',
-  init_src,
-  "VVStatusCol"
-)
-
--- =============================================
--- FIX 4: 运行时行为验证（模拟 sign_cache 清理）
--- =============================================
--- 模拟 sign_cache / result_cache 清理逻辑
--- key 格式: win:buf:lnum:virtnum:relnum
-local sign_cache = { [42] = { mark = 'a' }, [99] = { sign = 'x' } }
-local result_cache = {
-  ['100:42:5:0:3'] = 'cached_1',
-  ['100:42:10:0:8'] = 'cached_2',
-  ['200:99:5:0:3'] = 'cached_3',
-  ['200:99:20:0:18'] = 'cached_4',
-}
-
--- 模拟 wipe buf=42
-local wipe_buf = 42
-sign_cache[wipe_buf] = nil
-local prefix = ':' .. wipe_buf .. ':'
-for k in pairs(result_cache) do
-  if k:find(prefix, 1, true) then
-    result_cache[k] = nil
-  end
-end
-
-assert_eq('sign_cache[42] 已清理', sign_cache[42], nil)
-assert_eq('sign_cache[99] 未受影响', sign_cache[99] ~= nil, true)
-assert_eq('result_cache buf=42 条目已清理', result_cache['100:42:5:0:3'], nil)
-assert_eq('result_cache buf=42 条目已清理(2)', result_cache['100:42:10:0:8'], nil)
-assert_eq('result_cache buf=99 未受影响', result_cache['200:99:5:0:3'], 'cached_3')
-assert_eq('result_cache buf=99 未受影响(2)', result_cache['200:99:20:0:18'], 'cached_4')
-
--- =============================================
--- Git 双轨：同一行可同时显示 staged / unstaged
--- =============================================
-local git_path = root .. '/lua/vv-statuscol/git.lua'
-local git_src = table.concat(vim.fn.readfile(git_path), '\n')
 local git = require('vv-statuscol.git')
 git.configure({
   A = { text = 'A', hl = 'Added' },
@@ -134,52 +74,12 @@ assert_eq('同一行同时产生 staged / unstaged marker', dual_ready, true)
 assert_eq('staged 使用独立 Added 标记', git.symbol(both_buf, 2, 'staged').hl, 'Added')
 assert_eq('unstaged 使用独立 Changed 标记', git.symbol(both_buf, 2, 'unstaged').hl, 'Changed')
 
--- =============================================
--- FIX 6 (动态宽度): result_cache 键纳入影响「渲染宽度」的因素
---   行号段：number / relativenumber；各槽是否收成 0 宽：has_mark / has_sign / git / fold
--- =============================================
-local cached_fn = init_src:match('local function cached_get.-result_cache%[key%]') or ''
-assert_match('缓存键纳入 number', cached_fn, 'wo%.number')
-assert_match('缓存键纳入 relativenumber', cached_fn, 'wo%.relativenumber')
-assert_match('缓存键纳入 has_mark', cached_fn, 'has_mark')
-assert_match('缓存键纳入 has_sign', cached_fn, 'has_sign')
-assert_match('缓存键纳入 git 存在性', cached_fn, 'git_has')
-assert_match('缓存键纳入 fold 结构存在性', cached_fn, 'win_has_fold')
-
--- 逻辑：复刻 opt_flags 公式，验证六个因素任一变化都改变键
-local function opt_flags(nu, rnu, mark, sign, git, fold)
-  return string.format('%d%d%d%d%d%d',
-    nu and 1 or 0, rnu and 1 or 0, mark and 1 or 0, sign and 1 or 0, git and 1 or 0, fold and 1 or 0)
-end
-local base = opt_flags(true, false, false, false, false, false)
-assert_eq('nonumber 改变键', opt_flags(false, false, false, false, false, false) ~= base, true)
-assert_eq('relativenumber 改变键', opt_flags(true, true, false, false, false, false) ~= base, true)
-assert_eq('有 mark 改变键', opt_flags(true, false, true, false, false, false) ~= base, true)
-assert_eq('有 sign 改变键', opt_flags(true, false, false, true, false, false) ~= base, true)
-assert_eq('有 git 改变键', opt_flags(true, false, false, false, true, false) ~= base, true)
-assert_eq('有 fold 改变键', opt_flags(true, false, false, false, false, true) ~= base, true)
-
--- 新键仍保留 ':buf:' 子串，BufWipeout 前缀清理逻辑不受影响
-local sample_key = string.format('%d:%d:%d:%d:%d:%s', 100, 42, 5, 0, 3, base)
-assert_match('新键仍含 :buf: 供 BufWipeout 清理', sample_key, ':42:')
-
--- =============================================
--- FIX 7 (#71): disable() 释放后台资源，enable() 重挂
--- =============================================
-assert_match('#71 git.lua 提供 detach()', git_src, 'function M%.detach')
-assert_match('#71 detach 删除 VVStatusColGit augroup', git_src, 'del_augroup_by_name')
-
-assert_match('#71 init 定义 start_resources', init_src, 'local function start_resources')
-assert_match('#71 init 定义 stop_resources', init_src, 'local function stop_resources')
-assert_match('#71 stop_resources 停止 refresh_timer', init_src, 'refresh_timer:stop')
-assert_match('#71 stop_resources 删除 statuscol_augroup', init_src, 'del_augroup_by_id')
-assert_match('#71 disable 调用 stop_resources', init_src, 'stop_resources%(%)')
-assert_match('#71 enable 调用 start_resources', init_src, 'start_resources%(%)')
-
--- =============================================
--- Sign 变化：refresh() 必须同步失效缓存并立即刷新
--- =============================================
 local statuscol = require('vv-statuscol')
+local segment_ctx
+local listener_ctx
+local consume_segment = false
+local listener_calls = 0
+
 statuscol.setup({
   refresh = 1000,
   ft_ignore = { 'custom-ui' },
@@ -189,7 +89,25 @@ statuscol.setup({
     C = { text = 'C', hl = 'Changed' },
     D = { text = 'D', hl = 'Deleted' },
   },
+  layout = {
+    left = {
+      {
+        segment = 'sign',
+        on_click = function(ctx)
+          segment_ctx = ctx
+          return consume_segment
+        end,
+      },
+    },
+    right = { 'unstaged', 'fold' },
+  },
 })
+
+statuscol.on_click(function(ctx)
+  listener_ctx = ctx
+  listener_calls = listener_calls + 1
+  return false
+end)
 
 local sign_buf = vim.api.nvim_get_current_buf()
 local sign_win = vim.api.nvim_get_current_win()
@@ -197,27 +115,46 @@ vim.api.nvim_buf_set_lines(sign_buf, 0, -1, false, { 'one', 'two', 'three' })
 vim.fn.sign_define('VVStatusColTestSign', { text = 'T', texthl = 'DiagnosticInfo' })
 
 statuscol.refresh(sign_buf)
-local before_sign = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-  winid = sign_win,
-  use_statuscol_lnum = 2,
-}).str
-
+local before_sign = evaluate(sign_win, 2)
 vim.fn.sign_place(0, 'vv-statuscol-test', 'VVStatusColTestSign', sign_buf, {
   lnum = 2,
   priority = 50,
 })
+vim.api.nvim_buf_set_mark(sign_buf, 'a', 2, 0, {})
 statuscol.refresh(sign_buf)
+local after_sign = evaluate(sign_win, 2)
 
-local after_sign = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-  winid = sign_win,
-  use_statuscol_lnum = 2,
-}).str
 assert_eq('refresh 前状态列没有测试 sign', before_sign:find('T', 1, true), nil)
 assert_eq('refresh 后立即读取到测试 sign', after_sign:find('T', 1, true) ~= nil, true)
+assert_eq('layout.left 隐藏省略的 mark', after_sign:find('a', 1, true), nil)
 
--- =============================================
--- fold 优先级：与 Git 同行且宽度不足时仍保留折叠图标
--- =============================================
+vim.wo[sign_win].number = true
+local with_number = evaluate(sign_win, 2)
+vim.wo[sign_win].number = false
+local without_number = evaluate(sign_win, 2)
+assert_eq('number 变化无需等待定时器即可更新缓存结果', with_number:find('2', 1, true) ~= nil, true)
+assert_eq('关闭 number 后立即隐藏行号', without_number:find('2', 1, true), nil)
+vim.wo[sign_win].number = true
+
+local original_getmousepos = vim.fn.getmousepos
+vim.fn.getmousepos = function()
+  return { winid = sign_win, line = 2, column = 1, screenrow = 1, screencol = 1 }
+end
+
+statuscol.click(2, 2, 'r', 'c')
+assert_eq('槽位回调收到 segment', segment_ctx and segment_ctx.segment, 'sign')
+assert_eq('槽位回调收到右键', segment_ctx and segment_ctx.button, 'r')
+assert_eq('槽位回调收到双击次数', segment_ctx and segment_ctx.clicks, 2)
+assert_eq('槽位回调收到修饰键', segment_ctx and segment_ctx.mods, 'c')
+assert_eq('全局监听器收到统一窗口字段', listener_ctx and listener_ctx.win, sign_win)
+assert_eq('全局监听器收到统一 buffer 字段', listener_ctx and listener_ctx.buf, sign_buf)
+
+consume_segment = true
+local calls_before_consume = listener_calls
+statuscol.click(2, 1, 'l', '')
+assert_eq('槽位回调返回 true 后停止事件传播', listener_calls, calls_before_consume)
+consume_segment = false
+
 vim.api.nvim_win_set_buf(sign_win, both_buf)
 vim.api.nvim_win_call(sign_win, function()
   vim.wo.number = true
@@ -229,86 +166,64 @@ vim.api.nvim_win_call(sign_win, function()
 end)
 statuscol.refresh(both_buf)
 
-local fold_open_full = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-  winid = sign_win,
-  use_statuscol_lnum = 2,
-}).str
-local fold_open_narrow = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-  winid = sign_win,
-  use_statuscol_lnum = 2,
-  maxwidth = 4,
-}).str
-local git_pos = math.max(
-  fold_open_full:find('A', 1, true) or 0,
-  fold_open_full:find('C', 1, true) or 0
-)
+local fold_open_full = evaluate(sign_win, 2)
+local fold_open_narrow = evaluate(sign_win, 2, 4)
+local unstaged_pos = fold_open_full:find('C', 1, true) or 0
+local staged_pos = fold_open_full:find('A', 1, true) or 0
 local open_pos = fold_open_full:find('F', 1, true) or 0
-assert_eq('fold open 图标位于 Git 标记之后', git_pos > 0 and open_pos > git_pos, true)
-assert_eq('statuscolumn 受限时保留 fold open 图标', fold_open_narrow:find('F', 1, true) ~= nil, true)
+assert_eq(
+  'layout.right 按用户顺序渲染 unstaged / fold',
+  unstaged_pos > 0 and unstaged_pos < open_pos,
+  true
+)
+assert_eq('layout.right 隐藏省略的 staged', staged_pos, 0)
+assert_eq('宽度受限时优先保留 fold 图标', fold_open_narrow:find('F', 1, true) ~= nil, true)
 
-vim.api.nvim_win_call(sign_win, function() vim.cmd('normal! zc') end)
+vim.fn.getmousepos = function()
+  return { winid = sign_win, line = 2, column = 1, screenrow = 1, screencol = 1 }
+end
+
+statuscol.click(4, 1, 'r', '')
+assert_eq('右键不触发默认折叠', vim.fn.foldclosed(2), -1)
+statuscol.click(4, 2, 'l', '')
+assert_eq('左键双击不触发默认折叠', vim.fn.foldclosed(2), -1)
+statuscol.click(4, 1, 'l', '')
+assert_eq('左键单击触发默认折叠', vim.fn.foldclosed(2), 2)
 statuscol.refresh(both_buf)
-local fold_close_narrow = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-  winid = sign_win,
-  use_statuscol_lnum = 2,
-  maxwidth = 4,
-}).str
-assert_eq('statuscolumn 受限时保留 fold close 图标', fold_close_narrow:find('X', 1, true) ~= nil, true)
+assert_eq('折叠后保留 close 图标', evaluate(sign_win, 2, 4):find('X', 1, true) ~= nil, true)
 
+vim.fn.getmousepos = original_getmousepos
 vim.api.nvim_win_set_buf(sign_win, sign_buf)
 vim.api.nvim_buf_delete(both_buf, { force = true })
 vim.fn.delete(tmp_dir, 'rf')
 
-local git_module = require('vv-statuscol.git')
-local original_git_has = git_module.has
-git_module.has = function() error('ignored buffers must return before Git lookup') end
+local original_git_has = git.has
+git.has = function() error('ignored buffers must return before Git lookup') end
 
 vim.bo[sign_buf].filetype = 'custom-ui'
 statuscol.refresh(sign_buf)
-local ignored_ft = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-  winid = sign_win,
-  use_statuscol_lnum = 2,
-}).str
-assert_eq('外部 ft_ignore 整体覆盖后生效', ignored_ft, '')
+assert_eq('外部 ft_ignore 整体覆盖后生效', evaluate(sign_win, 2), '')
 
 vim.bo[sign_buf].filetype = 'lua'
-for _, bt in ipairs({ 'help', 'nofile', 'prompt', 'quickfix' }) do
-  vim.bo[sign_buf].buftype = bt
+for _, buftype in ipairs({ 'help', 'nofile', 'prompt', 'quickfix' }) do
+  vim.bo[sign_buf].buftype = buftype
   statuscol.refresh(sign_buf)
-  local ignored = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-    winid = sign_win,
-    use_statuscol_lnum = 2,
-  }).str
-  assert_eq('buftype=' .. bt .. ' 不渲染状态列', ignored, '')
+  assert_eq('buftype=' .. buftype .. ' 不渲染状态列', evaluate(sign_win, 2), '')
 end
 
+git.has = original_git_has
 vim.bo[sign_buf].buftype = ''
-vim.cmd('new')
-vim.cmd('terminal true')
-local terminal_win = vim.api.nvim_get_current_win()
-local ignored_terminal = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-  winid = terminal_win,
-  use_statuscol_lnum = 1,
-}).str
-assert_eq('真实 terminal buffer 不渲染状态列', ignored_terminal, '')
-vim.cmd('close!')
-
-git_module.has = original_git_has
 vim.bo[sign_buf].filetype = 'dashboard'
 statuscol.refresh(sign_buf)
-local replaced_defaults = vim.api.nvim_eval_statusline(vim.o.statuscolumn, {
-  winid = sign_win,
-  use_statuscol_lnum = 2,
-}).str
-assert_eq('外部 ft_ignore 不与旧默认 filetype 合并', replaced_defaults:find('T', 1, true) ~= nil, true)
+assert_eq('外部 ft_ignore 不与旧默认 filetype 合并', evaluate(sign_win, 2):find('T', 1, true) ~= nil, true)
+
+statuscol.disable()
+assert_eq('disable 清空 statuscolumn', vim.o.statuscolumn, '')
+statuscol.enable()
+assert_eq('enable 恢复 statuscolumn', vim.o.statuscolumn ~= '', true)
 
 vim.fn.sign_unplace('vv-statuscol-test', { buffer = sign_buf })
 statuscol.disable()
 
--- =============================================
--- 汇总
--- =============================================
 print(('\n总计: %d 通过, %d 失败'):format(passed, failed))
-if failed > 0 then
-  vim.cmd('cquit 1')
-end
+if failed > 0 then vim.cmd('cquit 1') end

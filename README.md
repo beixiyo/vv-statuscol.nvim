@@ -26,7 +26,7 @@ Want my Neovim config? See <a href="https://github.com/beixiyo/dotfiles">dotfile
 
 ## Why this plugin
 
-[statuscol.nvim](https://github.com/luukvbaal/statuscol.nvim) uses about 690 lines to provide arbitrary sign-segment composition and several FFI calls. This plugin takes a roughly 200-line, snacks-style approach and adds content-aware segment widths plus built-in line-level Git diffs without gitsigns.
+[statuscol.nvim](https://github.com/luukvbaal/statuscol.nvim) provides arbitrary sign-segment composition and several FFI calls. This plugin uses responsibility-focused modules to provide content-aware segment widths, configurable layouts and click events, plus built-in line-level Git diffs without gitsigns.
 
 ## Dual Git tracks
 
@@ -65,6 +65,19 @@ The fold cell is intentionally placed after the Git cells. When Neovim reaches t
     bt_ignore = { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' },
     refresh = 50,
     fold = { open = '', close = '' },
+    layout = {
+      left = { 'mark', 'sign' },
+      right = {
+        'staged',
+        'unstaged',
+        {
+          segment = 'fold',
+          on_click = function(ctx)
+            print(ctx.segment, ctx.win, ctx.buf, ctx.line)
+          end,
+        },
+      },
+    },
     git = {
       A = { text = '▎', hl = 'VVGitAdded' },
       C = { text = '▎', hl = 'VVGitModified' },
@@ -84,11 +97,19 @@ The fold cell is intentionally placed after the Git cells. When Neovim reaches t
 | `refresh` | `integer` | `50` | Sign-cache flush interval in milliseconds |
 | `fold.open` | `string` | `` | Icon for a foldable start line |
 | `fold.close` | `string` | `` | Icon for a closed fold |
+| `layout.left` | `('mark'\|'sign'\|table)[]` | `{ 'mark', 'sign' }` | Left-side segment order and optional click callbacks |
+| `layout.right` | `('staged'\|'unstaged'\|'fold'\|table)[]` | `{ 'staged', 'unstaged', 'fold' }` | Right-side segment order and optional click callbacks |
 | `git.A` | `{ text, hl }` | `{ '▎', 'VVGitAdded' }` | Added-line glyph and highlight |
 | `git.C` | `{ text, hl }` | `{ '▎', 'VVGitModified' }` | Changed-line glyph and highlight |
 | `git.D` | `{ text, hl }` | `{ '󰆐', 'VVGitDeleted' }` | Deleted-line glyph and highlight |
 
 User-provided `ft_ignore` and `bt_ignore` lists replace their defaults rather than extending them. The default buftype filter covers standard special buffers without coupling vv-statuscol to specific UI plugins; use `ft_ignore` only for additional filetype-specific exceptions.
+
+Each layout entry can be a segment name or `{ segment = '...', on_click = function(ctx) ... end }`. A side can omit a segment to hide it, and a user-provided `left` or `right` list replaces that side's default list.
+
+`ctx` contains `segment`, `win`, `buf`, `line`, `column`, `clicks`, `button`, and `mods`. `button` distinguishes `l`, `r`, `m`, and other mouse buttons; `clicks` distinguishes single, double, and further consecutive clicks.
+
+Events flow through the segment `on_click`, global listeners registered with `require('vv-statuscol').on_click(...)`, and finally the built-in default behavior. Returning `true` from any callback stops propagation. The default behavior responds only to a single left click and toggles a fold when one exists on the target line. The default layout does not install segment callbacks.
 
 ### Built-in Git diff
 

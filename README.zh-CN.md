@@ -25,7 +25,7 @@
 
 ## 为什么要这个插件
 
-[statuscol.nvim](https://github.com/luukvbaal/statuscol.nvim)（690 行）做了 sign 段的任意编排 + 多种 FFI 调用。本插件 ~200 行 snacks-style 足够，并在 snacks 思路上更进一步：**各段按内容动态收宽** + **内建 git line-level diff**（不依赖 gitsigns）
+[statuscol.nvim](https://github.com/luukvbaal/statuscol.nvim) 支持 sign 段任意编排与多种 FFI 调用。本插件采用按职责拆分的模块结构，重点提供 **各段按内容动态收宽**、**可配置布局与点击事件**、以及不依赖 gitsigns 的 **内建 git line-level diff**
 
 ## Git 双轨规则
 
@@ -71,6 +71,19 @@ fold 槽刻意放在 Git 槽之后。Neovim 达到 statuscolumn 最大宽度时�
       open  = '',              -- 可折叠起始行图标（NerdFont caret-down）
       close = '',              -- 已折叠行图标（NerdFont caret-right）
     },
+    layout = {
+      left = { 'mark', 'sign' },
+      right = {
+        'staged',
+        'unstaged',
+        {
+          segment = 'fold',
+          on_click = function(ctx)
+            print(ctx.segment, ctx.win, ctx.buf, ctx.line)
+          end,
+        },
+      },
+    },
     git = {
       A = { text = '▎', hl = 'VVGitAdded' },    -- 新增行
       C = { text = '▎', hl = 'VVGitModified' },  -- 修改行
@@ -90,11 +103,19 @@ fold 槽刻意放在 Git 槽之后。Neovim 达到 statuscolumn 最大宽度时�
 | `refresh` | `integer` | `50` | sign 缓存 flush 周期（ms） |
 | `fold.open` | `string` | `` | 可折叠起始行的图标 |
 | `fold.close` | `string` | `` | 已折叠行的图标 |
+| `layout.left` | `('mark'\|'sign'\|table)[]` | `{ 'mark', 'sign' }` | 左侧槽位顺序与可选点击回调 |
+| `layout.right` | `('staged'\|'unstaged'\|'fold'\|table)[]` | `{ 'staged', 'unstaged', 'fold' }` | 右侧槽位顺序与可选点击回调 |
 | `git.A` | `{ text, hl }` | `{ '▎', 'VVGitAdded' }` | 新增行 glyph + 高亮组 |
 | `git.C` | `{ text, hl }` | `{ '▎', 'VVGitModified' }` | 修改行 |
 | `git.D` | `{ text, hl }` | `{ '󰆐', 'VVGitDeleted' }` | 删除行 |
 
 外部传入的 `ft_ignore` 与 `bt_ignore` 列表会整体覆盖默认值，不会与默认列表合并。默认按 buftype 覆盖 Neovim 的标准特殊 buffer，避免 vv-statuscol 依赖具体 UI 插件名称；仅在需要额外按 filetype 排除时配置 `ft_ignore`
+
+layout 条目既可直接写槽位名，也可写成 `{ segment = '...', on_click = function(ctx) ... end }`。省略槽位即可隐藏它；外部传入的 `left` 或 `right` 列表会整体覆盖对应侧默认列表
+
+`ctx` 包含 `segment`、`win`、`buf`、`line`、`column`、`clicks`、`button` 与 `mods`。其中 `button` 可区分 `l`、`r`、`m` 等鼠标按钮，`clicks` 可区分单击、双击或更多连续点击
+
+事件依次经过槽位 `on_click`、`require('vv-statuscol').on_click(...)` 注册的全局监听器、最后是内建默认行为。任意回调返回 `true` 即停止后续传播；默认行为只响应左键单击，并在目标行存在折叠时切换开合。插件默认布局没有预置槽位回调
 
 ### 内建 Git diff
 
