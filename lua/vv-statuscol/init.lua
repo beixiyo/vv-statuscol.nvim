@@ -1,7 +1,6 @@
 -- vv-statuscol 对外入口：配置模块并管理后台资源生命周期
 
 local click = require('vv-statuscol.click')
-local fold = require('vv-statuscol.fold')
 local git = require('vv-statuscol.git')
 local layout = require('vv-statuscol.layout')
 local renderer = require('vv-statuscol.renderer')
@@ -17,6 +16,7 @@ local defaults = {
   fold = {
     open = '',
     close = '',
+    show_nested_level = false,
   },
   git = {
     A = { text = '▎', hl = 'VVGitAdded' },
@@ -41,7 +41,34 @@ local statuscolumn = "%!v:lua.require'vv-statuscol'.get()"
 local function reset_caches()
   signs.reset()
   renderer.reset()
-  fold.reset()
+end
+
+local function configure_fold_column()
+  if not layout_state.enabled.right.fold then
+    vim.opt.foldcolumn = '0'
+    return
+  end
+
+  local function normalize(value)
+    if value == '' then return ' ' end
+    if vim.fn.strdisplaywidth(value) ~= 1 then
+      error('vv-statuscol: fold icons must occupy exactly one display cell')
+    end
+    return value
+  end
+
+  vim.opt.foldcolumn = 'auto:1'
+  local fold_chars = {
+    foldopen = normalize(config.fold.open),
+    foldclose = normalize(config.fold.close),
+    foldsep = ' ',
+  }
+  if config.fold.show_nested_level then
+    vim.opt.fillchars:remove('foldinner')
+  else
+    fold_chars.foldinner = ' '
+  end
+  vim.opt.fillchars:append(fold_chars)
 end
 
 local function start_resources()
@@ -107,7 +134,6 @@ function M.refresh(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   signs.clear(buf)
   renderer.clear_buffer(buf)
-  fold.reset()
   pcall(vim.api.nvim__redraw, {
     buf = buf,
     statuscolumn = true,
@@ -166,13 +192,12 @@ function M.setup(opts)
   layout_state = layout.configure(config.layout)
 
   click.configure(layout_state.targets)
-  fold.configure(config.fold)
   signs.configure(layout_state.enabled.left)
   renderer.configure(config, layout_state)
   require('vv-statuscol.hl').setup()
   git.configure(config.git)
 
-  vim.opt.foldcolumn = '0'
+  configure_fold_column()
   did_setup = true
 
   if config.enabled then M.enable() end
@@ -187,7 +212,7 @@ end
 ---@field ft_ignore? string[] 忽略的 filetype 列表；外部传入时整体覆盖默认值 @default {}
 ---@field bt_ignore? string[] 忽略的 buftype 列表；外部传入时整体覆盖默认值 @default { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }
 ---@field refresh? integer 缓存刷新间隔（ms） @default 50
----@field fold? { open: string, close: string } 折叠图标 @default { open = '', close = '' }
+---@field fold? VVStatusColFoldConfig 折叠栏配置 @default { open = '', close = '', show_nested_level = false }
 ---@field git? table<string, { text: string, hl: string }> Git 行级 diff 图标与高亮 @default 使用 VVGitAdded、VVGitModified 与 VVGitDeleted
 ---@field layout? VVStatusColLayout 内置槽位顺序与点击回调 @default { left = { 'mark', 'sign' }, right = { 'staged', 'unstaged', 'fold' } }
 
@@ -195,6 +220,11 @@ end
 ---@alias VVStatusColRightSegment 'staged'|'unstaged'|'fold'
 ---@alias VVStatusColSegment 'gutter'|VVStatusColLeftSegment|VVStatusColRightSegment
 ---@alias VVStatusColClickCallback fun(ctx: VVStatusColClickContext): boolean?
+
+---@class VVStatusColFoldConfig
+---@field open? string 展开折叠图标 @default ''
+---@field close? string 关闭折叠图标 @default ''
+---@field show_nested_level? boolean 折叠栏过窄时显示嵌套层数数字 @default false
 
 ---@class VVStatusColLayout
 ---@field left (VVStatusColLeftSegment|VVStatusColLayoutItem)[] 左侧槽位

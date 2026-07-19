@@ -26,7 +26,7 @@ Want my Neovim config? See <a href="https://github.com/beixiyo/dotfiles">dotfile
 
 ## Why this plugin
 
-[statuscol.nvim](https://github.com/luukvbaal/statuscol.nvim) provides arbitrary sign-segment composition and several FFI calls. This plugin uses responsibility-focused modules to provide content-aware segment widths, configurable layouts and click events, plus built-in line-level Git diffs without gitsigns.
+[statuscol.nvim](https://github.com/luukvbaal/statuscol.nvim) provides arbitrary sign-segment composition and several FFI calls. This plugin uses responsibility-focused modules to provide content-aware segment widths, configurable layouts and click events, plus built-in line-level Git diffs without gitsigns. Its fold segment uses Neovim's native `%C` item and does not access internal ABI.
 
 ## Dual Git tracks
 
@@ -40,9 +40,9 @@ Unlike status columns that reserve fixed blank slots, every mark, sign, Git, and
 
 - A segment collapses to zero when the entire buffer or window has no content of that kind
 - A clean file with no marks, diagnostics, Git changes, or folds shows only line numbers
-- Width is stable across the whole buffer or window, so right-aligned line numbers do not jump between rows
+- Width is stable across the whole buffer or window, with Neovim managing fold width per window, so right-aligned line numbers do not jump between rows
 
-Set native `signcolumn` to `no` and `foldcolumn` to `0`, because they render outside `statuscolumn` and otherwise reserve extra columns. `setup()` sets `foldcolumn` to `0` automatically.
+Set native `signcolumn` to `no` because the plugin renders mark, sign, and Git cells itself. The fold segment uses Neovim's native `%C` item, and `setup()` sets `foldcolumn=auto:1` automatically.
 
 ### Layout
 
@@ -64,7 +64,11 @@ The fold cell is intentionally placed after the Git cells. When Neovim reaches t
     ft_ignore = {},
     bt_ignore = { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' },
     refresh = 50,
-    fold = { open = '', close = '' },
+    fold = {
+      open = '',
+      close = '',
+      show_nested_level = false,
+    },
     layout = {
       left = { 'mark', 'sign' },
       right = {
@@ -97,6 +101,7 @@ The fold cell is intentionally placed after the Git cells. When Neovim reaches t
 | `refresh` | `integer` | `50` | Sign-cache flush interval in milliseconds |
 | `fold.open` | `string` | `` | Icon for a foldable start line |
 | `fold.close` | `string` | `` | Icon for a closed fold |
+| `fold.show_nested_level` | `boolean` | `false` | Show numeric nesting levels when the fold column is too narrow |
 | `layout.left` | `('mark'\|'sign'\|table)[]` | `{ 'mark', 'sign' }` | Left-side segment order and optional click callbacks |
 | `layout.right` | `('staged'\|'unstaged'\|'fold'\|table)[]` | `{ 'staged', 'unstaged', 'fold' }` | Right-side segment order and optional click callbacks |
 | `git.A` | `{ text, hl }` | `{ '▎', 'VVGitAdded' }` | Added-line glyph and highlight |
@@ -120,5 +125,7 @@ On `BufReadPost`, `BufWritePost`, `FocusGained`, and related events, the plugin 
 Neovim automatically grows a status column during redraw but does not shrink it. Growth therefore uses normal redraws. Shrinking is dispatched precisely after Git refreshes, `DiagnosticChanged` events debounced through `vv-utils.timer.debounce`, and fold changes caused by mouse actions or ufo mappings such as `zR`, `zM`, `zr`, and `zm`.
 
 Those events call `nvim__redraw{statuscolumn}` to force width recalculation. Marks have no corresponding event, so the sign-cache heartbeat controlled by `refresh` provides the fallback.
+
+The fold segment reads the current window state live through native `%C`. It does not scan buffers or cache fold results, so buffer switches and folds below an arbitrary line limit cannot leave it stale.
 
 Integrations that place signs directly can call `require('vv-statuscol').refresh(buf)`. It invalidates the buffer's sign cache and flushes the status-column redraw immediately.

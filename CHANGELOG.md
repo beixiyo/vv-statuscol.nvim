@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.2] - 2026-07-19
+
+### Fixed
+
+- fold 槽改用 Neovim 原生 `%C` 与 `foldcolumn=auto:1`，删除 FFI、窗口级折叠缓存和 2000 行扫描上限；从无折叠 buffer 切换到相同 `changedtick` 的其他 buffer 时不再错误隐藏折叠栏，长文件中 2000 行之后的折叠也能正常显示
+- 删除对 Neovim 内部 `fold_info` / `find_window_by_handle` ABI 的依赖，折叠状态改由 Neovim 在每次状态列重绘时实时提供
+
+### Added
+
+- 新增 `fold.show_nested_level`，控制原生折叠栏过窄时是否显示嵌套层数数字，默认关闭
+
 ## [0.1.1] - 2026-07-19
 
 ### Changed

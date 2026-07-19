@@ -102,6 +102,7 @@ statuscol.setup({
     right = { 'unstaged', 'fold' },
   },
 })
+assert_eq('fold layout 启用原生 foldcolumn', vim.wo.foldcolumn, 'auto:1')
 
 statuscol.on_click(function(ctx)
   listener_ctx = ctx
@@ -192,9 +193,79 @@ assert_eq('左键单击触发默认折叠', vim.fn.foldclosed(2), 2)
 statuscol.refresh(both_buf)
 assert_eq('折叠后保留 close 图标', evaluate(sign_win, 2, 4):find('X', 1, true) ~= nil, true)
 
+local nested_buf = vim.api.nvim_create_buf(false, true)
+vim.bo[nested_buf].buftype = ''
+vim.api.nvim_buf_set_lines(nested_buf, 0, -1, false, { 'one', 'two', 'three', 'four', 'five' })
+vim.api.nvim_win_set_buf(sign_win, nested_buf)
+vim.api.nvim_win_call(sign_win, function()
+  vim.wo.foldenable = true
+  vim.wo.foldmethod = 'manual'
+  vim.cmd('1,5fold')
+  vim.cmd('2,4fold')
+  vim.cmd('normal! zR')
+end)
+statuscol.refresh(nested_buf)
+assert_eq('默认隐藏折叠嵌套层数数字', evaluate(sign_win, 3):find('2', 1, true), nil)
+
+local no_fold_buf = vim.api.nvim_create_buf(false, true)
+local switched_fold_buf = vim.api.nvim_create_buf(false, true)
+for _, buf in ipairs({ no_fold_buf, switched_fold_buf }) do
+  vim.bo[buf].buftype = ''
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'one', 'two', 'three' })
+end
+assert_eq(
+  'buffer 切换回归夹具使用相同 changedtick',
+  vim.b[no_fold_buf].changedtick,
+  vim.b[switched_fold_buf].changedtick
+)
+
+vim.api.nvim_win_set_buf(sign_win, no_fold_buf)
+vim.wo[sign_win].foldmethod = 'manual'
+statuscol.refresh(no_fold_buf)
+assert_eq('无折叠 buffer 不显示 fold 图标', evaluate(sign_win, 2):find('F', 1, true), nil)
+
+vim.api.nvim_win_set_buf(sign_win, switched_fold_buf)
+vim.api.nvim_win_call(sign_win, function()
+  vim.wo.foldenable = true
+  vim.wo.foldmethod = 'manual'
+  vim.cmd('2,3fold')
+  vim.cmd('normal! zR')
+end)
+statuscol.refresh(switched_fold_buf)
+assert_eq(
+  '同窗口从无折叠 buffer 切换后立即显示 fold 图标',
+  evaluate(sign_win, 2):find('F', 1, true) ~= nil,
+  true
+)
+
+local long_buf = vim.api.nvim_create_buf(false, true)
+vim.bo[long_buf].buftype = ''
+local long_lines = {}
+for lnum = 1, 2105 do
+  long_lines[lnum] = 'line ' .. lnum
+end
+vim.api.nvim_buf_set_lines(long_buf, 0, -1, false, long_lines)
+vim.api.nvim_win_set_buf(sign_win, long_buf)
+vim.api.nvim_win_call(sign_win, function()
+  vim.wo.foldenable = true
+  vim.wo.foldmethod = 'manual'
+  vim.cmd('2100,2105fold')
+  vim.cmd('normal! zR')
+end)
+statuscol.refresh(long_buf)
+assert_eq(
+  '2000 行以后才出现的折叠仍显示 fold 图标',
+  evaluate(sign_win, 2100):find('F', 1, true) ~= nil,
+  true
+)
+
 vim.fn.getmousepos = original_getmousepos
 vim.api.nvim_win_set_buf(sign_win, sign_buf)
 vim.api.nvim_buf_delete(both_buf, { force = true })
+vim.api.nvim_buf_delete(nested_buf, { force = true })
+vim.api.nvim_buf_delete(no_fold_buf, { force = true })
+vim.api.nvim_buf_delete(switched_fold_buf, { force = true })
+vim.api.nvim_buf_delete(long_buf, { force = true })
 vim.fn.delete(tmp_dir, 'rf')
 
 local original_git_has = git.has

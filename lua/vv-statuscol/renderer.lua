@@ -1,6 +1,5 @@
 -- 状态列渲染：组合布局槽位并缓存最终 statuscolumn 字符串
 
-local fold = require('vv-statuscol.fold')
 local git = require('vv-statuscol.git')
 local layout = require('vv-statuscol.layout')
 local signs = require('vv-statuscol.signs')
@@ -71,7 +70,6 @@ local function render(ctx)
   local sign_width = layout_state.enabled.left.sign and ctx.data.has_sign and 2 or 0
   local staged_width = layout_state.enabled.right.staged and ctx.git_has and 1 or 0
   local unstaged_width = layout_state.enabled.right.unstaged and ctx.git_has and 1 or 0
-  local fold_width = layout_state.enabled.right.fold and ctx.fold_has and 1 or 0
   local parts = {}
 
   if vim.v.virtnum ~= 0 then
@@ -83,7 +81,7 @@ local function render(ctx)
     layout.append(parts, layout_state.right, {
       staged = string.rep(' ', staged_width),
       unstaged = string.rep(' ', unstaged_width),
-      fold = string.rep(' ', fold_width),
+      fold = '%C',
     })
     parts[#parts + 1] = layout.clickable(' ', layout.default_click_id)
     return table.concat(parts)
@@ -92,12 +90,6 @@ local function render(ctx)
   local line = ctx.data.map[vim.v.lnum] or {}
   local staged = ctx.git_has and git.symbol(ctx.buf, vim.v.lnum, 'staged') or nil
   local unstaged = ctx.git_has and git.symbol(ctx.buf, vim.v.lnum, 'unstaged') or nil
-  local fold_text = ''
-  if fold_width > 0 then
-    local glyph = fold.render(ctx.win, vim.v.lnum)
-    fold_text = glyph ~= '' and glyph or ' '
-  end
-
   layout.append(parts, layout_state.left, {
     mark = mark_width > 0 and icon(line.mark, mark_width) or '',
     sign = sign_width > 0 and icon(line.sign, sign_width) or '',
@@ -107,7 +99,7 @@ local function render(ctx)
   layout.append(parts, layout_state.right, {
     staged = staged_width > 0 and icon(staged, 1) or '',
     unstaged = unstaged_width > 0 and icon(unstaged, 1) or '',
-    fold = fold_text,
+    fold = '%C',
   })
   parts[#parts + 1] = layout.clickable(' ', layout.default_click_id)
   return table.concat(parts)
@@ -127,33 +119,28 @@ local function cached()
     and not vim.w[win].vv_statuscol_git_disabled
     and git.has(buf)
     or false
-  local has_fold = layout_state.enabled.right.fold == true and fold.has(win) or false
   local ctx = {
     win = win,
     buf = buf,
     data = data,
     git_has = git_has,
-    fold_has = has_fold,
   }
   local option_flags = string.format(
-    '%d%d%d%d%d%d',
+    '%d%d%d%d%d',
     window_options.number and 1 or 0,
     window_options.relativenumber and 1 or 0,
     layout_state.enabled.left.mark and data.has_mark and 1 or 0,
     layout_state.enabled.left.sign and data.has_sign and 1 or 0,
-    git_has and 1 or 0,
-    has_fold and 1 or 0
+    git_has and 1 or 0
   )
-  local fold_state = has_fold and fold.state(win, vim.v.lnum) or 0
   local key = string.format(
-    '%d:%d:%d:%d:%d:%s:%d',
+    '%d:%d:%d:%d:%d:%s',
     win,
     buf,
     vim.v.lnum,
     vim.v.virtnum ~= 0 and 1 or 0,
     vim.v.relnum,
-    option_flags,
-    fold_state
+    option_flags
   )
   local result = result_cache[key]
   if result then return result end
@@ -197,6 +184,5 @@ end
 ---@field buf integer
 ---@field data { map: table, has_mark: boolean, has_sign: boolean }
 ---@field git_has boolean
----@field fold_has boolean
 
 return M
