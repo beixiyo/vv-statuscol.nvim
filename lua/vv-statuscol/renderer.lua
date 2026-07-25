@@ -68,8 +68,8 @@ end
 local function render(ctx)
   local mark_width = layout_state.enabled.left.mark and ctx.data.has_mark and 2 or 0
   local sign_width = layout_state.enabled.left.sign and ctx.data.has_sign and 2 or 0
-  local staged_width = layout_state.enabled.right.staged and ctx.git_has and 1 or 0
-  local unstaged_width = layout_state.enabled.right.unstaged and ctx.git_has and 1 or 0
+  local staged_width = layout_state.enabled.right.staged and ctx.git_channels.staged and 1 or 0
+  local unstaged_width = layout_state.enabled.right.unstaged and ctx.git_channels.unstaged and 1 or 0
   local parts = {}
 
   if vim.v.virtnum ~= 0 then
@@ -119,11 +119,15 @@ local function cached()
     and not vim.w[win].vv_statuscol_git_disabled
     and git.has(buf)
     or false
+  local git_channels = git_has
+    and git.channels(buf)
+    or { staged = false, unstaged = false }
   local ctx = {
     win = win,
     buf = buf,
     data = data,
     git_has = git_has,
+    git_channels = git_channels,
   }
   local option_flags = string.format(
     '%d%d%d%d%d',

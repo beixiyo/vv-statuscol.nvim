@@ -73,6 +73,26 @@ end, 10)
 assert_eq('同一行同时产生 staged / unstaged marker', dual_ready, true)
 assert_eq('staged 使用独立 Added 标记', git.symbol(both_buf, 2, 'staged').hl, 'Added')
 assert_eq('unstaged 使用独立 Changed 标记', git.symbol(both_buf, 2, 'unstaged').hl, 'Changed')
+assert_eq('普通文件保留 staged 双轨', git.channels(both_buf).staged, true)
+assert_eq('普通文件保留 unstaged 双轨', git.channels(both_buf).unstaged, true)
+
+vim.fn.system({ 'git', '-C', tmp_dir, 'commit', '-qm', 'second' })
+local revision_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(revision_buf, 0, -1, false, { 'one', 'staged', 'two', 'three' })
+vim.b[revision_buf].vv_git_diff_source = {
+  root = tmp_dir,
+  path = 'both.txt',
+  from_rev = 'HEAD^',
+  to_rev = 'HEAD',
+  side = 'new',
+}
+git.refresh(revision_buf)
+local revision_ready = vim.wait(3000, function()
+  return git.symbol(revision_buf, 2, 'unstaged') ~= nil
+end, 10)
+assert_eq('虚拟 revision buffer 读取通用 diff source', revision_ready, true)
+assert_eq('revision source 隐藏 staged 空轨', git.channels(revision_buf).staged, false)
+assert_eq('revision source 只显示单条比较轨', git.channels(revision_buf).unstaged, true)
 
 local statuscol = require('vv-statuscol')
 local segment_ctx
@@ -262,6 +282,7 @@ assert_eq(
 vim.fn.getmousepos = original_getmousepos
 vim.api.nvim_win_set_buf(sign_win, sign_buf)
 vim.api.nvim_buf_delete(both_buf, { force = true })
+vim.api.nvim_buf_delete(revision_buf, { force = true })
 vim.api.nvim_buf_delete(nested_buf, { force = true })
 vim.api.nvim_buf_delete(no_fold_buf, { force = true })
 vim.api.nvim_buf_delete(switched_fold_buf, { force = true })

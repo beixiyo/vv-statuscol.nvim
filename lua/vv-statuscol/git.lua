@@ -8,6 +8,7 @@ local M = {}
 
 local markers = {} --- @type table<integer, vv-utils.git.DiffLineSets>
 local pending = {} --- @type table<integer, boolean>
+local single_source = {} --- @type table<integer, boolean>
 
 -- text + hl 全部由 init.lua defaults.git 经 M.configure() 单向注入；
 -- 未 configure 前 symbol() 返回 nil（不渲染）
@@ -24,9 +25,29 @@ function M.refresh(bufnr)
   if pending[bufnr] then return end
   if not vim.api.nvim_buf_is_loaded(bufnr) then return end
 
+  local source = vim.b[bufnr].vv_git_diff_source
+  if type(source) == 'table' and type(source.path) == 'string' and source.path ~= '' then
+    pending[bufnr] = true
+    require('vv-utils.git').diff_lines(source.path, function(result)
+      pending[bufnr] = nil
+      if not vim.api.nvim_buf_is_loaded(bufnr) then
+        markers[bufnr] = nil
+        single_source[bufnr] = nil
+        return
+      end
+
+      markers[bufnr] = { staged = {}, unstaged = result or {} }
+      single_source[bufnr] = true
+      local ok, parent = pcall(require, 'vv-statuscol')
+      if ok and parent.refresh then parent.refresh(bufnr) end
+    end, source)
+    return
+  end
+
   local path = vim.api.nvim_buf_get_name(bufnr)
   if path == '' or vim.fn.filereadable(path) == 0 then
     markers[bufnr] = nil
+    single_source[bufnr] = nil
     return
   end
   pending[bufnr] = true
@@ -38,6 +59,7 @@ function M.refresh(bufnr)
     end
 
     markers[bufnr] = sets
+    single_source[bufnr] = nil
     local ok, parent = pcall(require, 'vv-statuscol')
     if ok and parent.refresh then parent.refresh(bufnr) end
   end)
@@ -63,9 +85,18 @@ function M.has(buf)
 end
 
 ---@param buf integer
+---@return { staged: boolean, unstaged: boolean }
+function M.channels(buf)
+  if not M.has(buf) then return { staged = false, unstaged = false } end
+  if single_source[buf] then return { staged = false, unstaged = true } end
+  return { staged = true, unstaged = true }
+end
+
+---@param buf integer
 function M.clear(buf)
   markers[buf] = nil
   pending[buf] = nil
+  single_source[buf] = nil
 end
 
 -- 刷新当前 tab 内所有可见窗口的 buffer
