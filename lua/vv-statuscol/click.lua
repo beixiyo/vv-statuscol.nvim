@@ -3,7 +3,25 @@
 local M = {}
 
 local targets = {} ---@type table<integer, VVStatusColClickTarget>
-local listeners = {} ---@type VVStatusColClickCallback[]
+local listeners = {} ---@type VVStatusColClickListener[]
+local dispatch_depth = 0
+local needs_compaction = false
+
+local function compact_listeners()
+  if dispatch_depth > 0 then
+    needs_compaction = true
+    return
+  end
+
+  local active = {}
+  for _, listener in ipairs(listeners) do
+    if listener.active then
+      active[#active + 1] = listener
+    end
+  end
+  listeners = active
+  needs_compaction = false
+end
 
 ---@param value table<integer, VVStatusColClickTarget>
 function M.configure(value)
@@ -16,7 +34,17 @@ function M.on_click(callback)
     error('vv-statuscol: click listener must be a function')
   end
 
-  listeners[#listeners + 1] = callback
+  local listener = {
+    callback = callback,
+    active = true,
+  }
+  listeners[#listeners + 1] = listener
+
+  return function()
+    if not listener.active then return end
+    listener.active = false
+    compact_listeners()
+  end
 end
 
 ---@param callback VVStatusColClickCallback
@@ -78,11 +106,22 @@ function M.dispatch(minwid, clicks, button, mods)
   local target = targets[minwid]
   if target and target.on_click and run(target.on_click, ctx) then return end
 
+  local handled = false
+  dispatch_depth = dispatch_depth + 1
   for _, listener in ipairs(listeners) do
-    if run(listener, ctx) then return end
+    if listener.active and run(listener.callback, ctx) then
+      handled = true
+      break
+    end
   end
+  dispatch_depth = dispatch_depth - 1
+  if dispatch_depth == 0 and needs_compaction then compact_listeners() end
 
-  default(ctx)
+  if not handled then default(ctx) end
 end
+
+---@class VVStatusColClickListener
+---@field callback VVStatusColClickCallback
+---@field active boolean
 
 return M

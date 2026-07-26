@@ -7,7 +7,9 @@
 local M = {}
 
 local markers = {} --- @type table<integer, vv-utils.git.DiffLineSets>
-local pending = {} --- @type table<integer, boolean>
+local pending = {} --- @type table<integer, integer>
+local revisions = {} --- @type table<integer, integer>
+local queued = {} --- @type table<integer, boolean>
 local single_source = {} --- @type table<integer, boolean>
 
 -- text + hl 全部由 init.lua defaults.git 经 M.configure() 单向注入；
@@ -20,26 +22,50 @@ function M.configure(cfg)
 end
 
 ---@param bufnr integer
+---@param revision integer
+---@param apply fun()
+local function complete(bufnr, revision, apply)
+  local owns_request = pending[bufnr] == revision
+  if owns_request then pending[bufnr] = nil end
+  if not vim.api.nvim_buf_is_loaded(bufnr) then
+    M.clear(bufnr)
+    return
+  end
+
+  if revisions[bufnr] ~= revision then
+    if owns_request and queued[bufnr] then
+      queued[bufnr] = nil
+      M.refresh(bufnr)
+    end
+    return
+  end
+  if not owns_request then return end
+
+  queued[bufnr] = nil
+  apply()
+  require('vv-statuscol').refresh(bufnr)
+end
+
+---@param bufnr integer
 function M.refresh(bufnr)
   if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
-  if pending[bufnr] then return end
   if not vim.api.nvim_buf_is_loaded(bufnr) then return end
+
+  local revision = (revisions[bufnr] or 0) + 1
+  revisions[bufnr] = revision
+  if pending[bufnr] then
+    queued[bufnr] = true
+    return
+  end
 
   local source = vim.b[bufnr].vv_git_diff_source
   if type(source) == 'table' and type(source.path) == 'string' and source.path ~= '' then
-    pending[bufnr] = true
+    pending[bufnr] = revision
     require('vv-utils.git').diff_lines(source.path, function(result)
-      pending[bufnr] = nil
-      if not vim.api.nvim_buf_is_loaded(bufnr) then
-        markers[bufnr] = nil
-        single_source[bufnr] = nil
-        return
-      end
-
-      markers[bufnr] = { staged = {}, unstaged = result or {} }
-      single_source[bufnr] = true
-      local ok, parent = pcall(require, 'vv-statuscol')
-      if ok and parent.refresh then parent.refresh(bufnr) end
+      complete(bufnr, revision, function()
+        markers[bufnr] = { staged = {}, unstaged = result or {} }
+        single_source[bufnr] = true
+      end)
     end, source)
     return
   end
@@ -50,18 +76,12 @@ function M.refresh(bufnr)
     single_source[bufnr] = nil
     return
   end
-  pending[bufnr] = true
+  pending[bufnr] = revision
   require('vv-utils.git').diff_line_sets(path, function(sets)
-    pending[bufnr] = nil
-    if not vim.api.nvim_buf_is_loaded(bufnr) then
-      markers[bufnr] = nil
-      return
-    end
-
-    markers[bufnr] = sets
-    single_source[bufnr] = nil
-    local ok, parent = pcall(require, 'vv-statuscol')
-    if ok and parent.refresh then parent.refresh(bufnr) end
+    complete(bufnr, revision, function()
+      markers[bufnr] = sets
+      single_source[bufnr] = nil
+    end)
   end)
 end
 
@@ -96,6 +116,8 @@ end
 function M.clear(buf)
   markers[buf] = nil
   pending[buf] = nil
+  revisions[buf] = (revisions[buf] or 0) + 1
+  queued[buf] = nil
   single_source[buf] = nil
 end
 

@@ -32,6 +32,7 @@ vim.opt.runtimepath:prepend(vim.fn.fnamemodify(root, ':h') .. '/vv-utils.nvim')
 vim.opt.runtimepath:prepend(root)
 
 local layout = require('vv-statuscol.layout')
+---@diagnostic disable-next-line: assign-type-mismatch
 local invalid_ok, invalid_error = pcall(layout.configure, {
   left = { 'sign' },
   right = { 'unknown' },
@@ -95,6 +96,9 @@ assert_eq('revision source 隐藏 staged 空轨', git.channels(revision_buf).sta
 assert_eq('revision source 只显示单条比较轨', git.channels(revision_buf).unstaged, true)
 
 local statuscol = require('vv-statuscol')
+local original_statuscolumn = vim.o.statuscolumn
+local original_foldcolumn = vim.o.foldcolumn
+local original_fillchars = vim.o.fillchars
 local segment_ctx
 local listener_ctx
 local consume_segment = false
@@ -124,7 +128,47 @@ statuscol.setup({
 })
 assert_eq('fold layout 启用原生 foldcolumn', vim.wo.foldcolumn, 'auto:1')
 
-statuscol.on_click(function(ctx)
+local race_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(race_buf, 0, -1, false, { 'one', 'two' })
+local git_utils = require('vv-utils.git')
+local original_diff_lines = git_utils.diff_lines
+local diff_callbacks = {}
+git_utils.diff_lines = function(_, callback, source)
+  diff_callbacks[#diff_callbacks + 1] = {
+    callback = callback,
+    source = vim.deepcopy(source),
+  }
+end
+
+vim.b[race_buf].vv_git_diff_source = { path = 'first.txt' }
+git.refresh(race_buf)
+vim.b[race_buf].vv_git_diff_source = { path = 'latest.txt' }
+git.refresh(race_buf)
+assert_eq('Git 请求执行期间合并后续刷新', #diff_callbacks, 1)
+
+diff_callbacks[1].callback({ [1] = 'A' })
+assert_eq('旧 Git 回调触发最新来源查询', #diff_callbacks, 2)
+assert_eq('补跑查询读取最新 diff source', diff_callbacks[2].source.path, 'latest.txt')
+diff_callbacks[2].callback({ [2] = 'C' })
+assert_eq('旧 Git 结果不会写入 marker', git.symbol(race_buf, 1, 'unstaged'), nil)
+assert_eq('最新 Git 结果写入 marker', git.symbol(race_buf, 2, 'unstaged').hl, 'Changed')
+
+vim.b[race_buf].vv_git_diff_source = { path = 'obsolete.txt' }
+git.refresh(race_buf)
+git.clear(race_buf)
+vim.b[race_buf].vv_git_diff_source = { path = 'current.txt' }
+git.refresh(race_buf)
+diff_callbacks[3].callback({ [1] = 'A' })
+git.refresh(race_buf)
+assert_eq('clear 前的回调不会清除新请求状态', #diff_callbacks, 4)
+diff_callbacks[4].callback({ [1] = 'C' })
+assert_eq('新请求期间的刷新仍会补跑', #diff_callbacks, 5)
+diff_callbacks[5].callback({ [2] = 'C' })
+
+git_utils.diff_lines = original_diff_lines
+git.clear(race_buf)
+
+local dispose_listener = statuscol.on_click(function(ctx)
   listener_ctx = ctx
   listener_calls = listener_calls + 1
   return false
@@ -158,6 +202,7 @@ assert_eq('关闭 number 后立即隐藏行号', without_number:find('2', 1, tru
 vim.wo[sign_win].number = true
 
 local original_getmousepos = vim.fn.getmousepos
+---@diagnostic disable-next-line: duplicate-set-field
 vim.fn.getmousepos = function()
   return { winid = sign_win, line = 2, column = 1, screenrow = 1, screencol = 1 }
 end
@@ -169,6 +214,29 @@ assert_eq('槽位回调收到双击次数', segment_ctx and segment_ctx.clicks, 
 assert_eq('槽位回调收到修饰键', segment_ctx and segment_ctx.mods, 'c')
 assert_eq('全局监听器收到统一窗口字段', listener_ctx and listener_ctx.win, sign_win)
 assert_eq('全局监听器收到统一 buffer 字段', listener_ctx and listener_ctx.buf, sign_buf)
+
+dispose_listener()
+local calls_after_dispose = listener_calls
+statuscol.click(2, 1, 'r', '')
+assert_eq('click disposer 移除监听器', listener_calls, calls_after_dispose)
+
+local first_listener_calls = 0
+local second_listener_calls = 0
+local dispose_first
+dispose_first = statuscol.on_click(function()
+  first_listener_calls = first_listener_calls + 1
+  dispose_first()
+  return false
+end)
+local dispose_second = statuscol.on_click(function()
+  second_listener_calls = second_listener_calls + 1
+  return false
+end)
+statuscol.click(2, 1, 'r', '')
+statuscol.click(2, 1, 'r', '')
+assert_eq('监听器可在分发期间释放自身', first_listener_calls, 1)
+assert_eq('释放监听器不会跳过后续监听器', second_listener_calls, 2)
+dispose_second()
 
 consume_segment = true
 local calls_before_consume = listener_calls
@@ -290,6 +358,7 @@ vim.api.nvim_buf_delete(long_buf, { force = true })
 vim.fn.delete(tmp_dir, 'rf')
 
 local original_git_has = git.has
+---@diagnostic disable-next-line: duplicate-set-field
 git.has = function() error('ignored buffers must return before Git lookup') end
 
 vim.bo[sign_buf].filetype = 'custom-ui'
@@ -310,12 +379,25 @@ statuscol.refresh(sign_buf)
 assert_eq('外部 ft_ignore 不与旧默认 filetype 合并', evaluate(sign_win, 2):find('T', 1, true) ~= nil, true)
 
 statuscol.disable()
-assert_eq('disable 清空 statuscolumn', vim.o.statuscolumn, '')
+assert_eq('disable 恢复原 statuscolumn', vim.o.statuscolumn, original_statuscolumn)
+assert_eq('disable 恢复原 foldcolumn', vim.o.foldcolumn, original_foldcolumn)
+assert_eq('disable 恢复原 fillchars', vim.o.fillchars, original_fillchars)
 statuscol.enable()
 assert_eq('enable 恢复 statuscolumn', vim.o.statuscolumn ~= '', true)
 
-vim.fn.sign_unplace('vv-statuscol-test', { buffer = sign_buf })
+vim.o.statuscolumn = 'external-statuscolumn'
+vim.o.foldcolumn = '3'
+vim.o.fillchars = 'fold:-'
 statuscol.disable()
+assert_eq('disable 保留外部 statuscolumn', vim.o.statuscolumn, 'external-statuscolumn')
+assert_eq('disable 保留外部 foldcolumn', vim.o.foldcolumn, '3')
+assert_eq('disable 保留外部 fillchars', vim.o.fillchars, 'fold:-')
+
+vim.fn.sign_unplace('vv-statuscol-test', { buffer = sign_buf })
+vim.api.nvim_buf_delete(race_buf, { force = true })
+vim.o.statuscolumn = original_statuscolumn
+vim.o.foldcolumn = original_foldcolumn
+vim.o.fillchars = original_fillchars
 
 print(('\n总计: %d 通过, %d 失败'):format(passed, failed))
 if failed > 0 then vim.cmd('cquit 1') end

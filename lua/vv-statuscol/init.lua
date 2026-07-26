@@ -31,12 +31,13 @@ local defaults = {
 
 local config = vim.deepcopy(defaults) ---@type VVStatusColConfig
 local layout_state ---@type VVStatusColLayoutState
-local did_setup = false
 local enabled = false
 local refresh_timer
 local statuscol_augroup
 local diagnostic_cancel
 local statuscolumn = "%!v:lua.require'vv-statuscol'.get()"
+local saved_options
+local owned_options
 
 local function reset_caches()
   signs.reset()
@@ -71,12 +72,31 @@ local function configure_fold_column()
   vim.opt.fillchars:append(fold_chars)
 end
 
+local function save_options()
+  if saved_options then return end
+  saved_options = {
+    statuscolumn = vim.o.statuscolumn,
+    foldcolumn = vim.o.foldcolumn,
+    fillchars = vim.o.fillchars,
+  }
+end
+
+local function restore_options()
+  if not saved_options then return end
+
+  for name, value in pairs(saved_options) do
+    if owned_options and vim.o[name] == owned_options[name] then vim.o[name] = value end
+  end
+  saved_options = nil
+  owned_options = nil
+end
+
 local function start_resources()
   if layout_state.enabled.right.staged or layout_state.enabled.right.unstaged then
     git.attach()
   end
 
-  refresh_timer = assert((vim.uv or vim.loop).new_timer())
+  refresh_timer = assert(vim.uv.new_timer())
   refresh_timer:start(config.refresh, config.refresh, reset_caches)
 
   statuscol_augroup = vim.api.nvim_create_augroup('VVStatusCol', { clear = true })
@@ -154,26 +174,34 @@ function M.click(minwid, clicks, button, mods)
   click.dispatch(minwid, clicks, button, mods)
 end
 
----订阅所有状态列点击；返回 true 可停止后续监听器与默认行为
+---订阅所有状态列点击；回调返回 true 可停止后续监听器与默认行为
 ---@param callback VVStatusColClickCallback
+---@return fun() disposer 可安全重复调用
 function M.on_click(callback)
-  click.on_click(callback)
+  return click.on_click(callback)
 end
 
 function M.enable()
   if enabled then return end
 
   enabled = true
+  save_options()
+  configure_fold_column()
   start_resources()
   vim.o.statuscolumn = statuscolumn
+  owned_options = {
+    statuscolumn = vim.o.statuscolumn,
+    foldcolumn = vim.o.foldcolumn,
+    fillchars = vim.o.fillchars,
+  }
 end
 
 function M.disable()
   if not enabled then return end
 
   enabled = false
-  vim.o.statuscolumn = ''
   stop_resources()
+  restore_options()
 end
 
 function M.toggle()
@@ -186,7 +214,7 @@ end
 
 ---@param opts? VVStatusColConfig
 function M.setup(opts)
-  if did_setup then return end
+  if enabled then M.disable() end
 
   config = vim.tbl_deep_extend('force', defaults, opts or {})
   layout_state = layout.configure(config.layout)
@@ -197,14 +225,11 @@ function M.setup(opts)
   require('vv-statuscol.hl').setup()
   git.configure(config.git)
 
-  configure_fold_column()
-  did_setup = true
-
   if config.enabled then M.enable() end
 
-  vim.api.nvim_create_user_command('VVStatusColEnable', M.enable, {})
-  vim.api.nvim_create_user_command('VVStatusColDisable', M.disable, {})
-  vim.api.nvim_create_user_command('VVStatusColToggle', M.toggle, {})
+  vim.api.nvim_create_user_command('VVStatusColEnable', M.enable, { force = true })
+  vim.api.nvim_create_user_command('VVStatusColDisable', M.disable, { force = true })
+  vim.api.nvim_create_user_command('VVStatusColToggle', M.toggle, { force = true })
 end
 
 ---@class VVStatusColConfig

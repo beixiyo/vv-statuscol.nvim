@@ -149,8 +149,7 @@ local function cached()
   local result = result_cache[key]
   if result then return result end
 
-  local ok, value = pcall(render, ctx)
-  if not ok then return '' end
+  local value = render(ctx)
 
   result_cache[key] = value
   return value
