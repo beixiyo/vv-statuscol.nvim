@@ -20,6 +20,7 @@ function M.configure(layout)
     end
   end
 
+  ---@type VVStatusColLayoutState
   local state = {
     left = {},
     right = {},
@@ -92,14 +93,5 @@ function M.clickable(text, click_id)
     text
   )
 end
-
----@class VVStatusColLayoutState
----@field left VVStatusColLayoutStateItem[]
----@field right VVStatusColLayoutStateItem[]
----@field enabled table<'left'|'right', table<string, boolean>>
----@field targets table<integer, VVStatusColClickTarget>
-
----@class VVStatusColLayoutStateItem: VVStatusColClickTarget
----@field click_id integer
 
 return M

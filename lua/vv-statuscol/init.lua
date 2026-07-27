@@ -7,7 +7,9 @@ local renderer = require('vv-statuscol.renderer')
 local signs = require('vv-statuscol.signs')
 
 local M = {}
+require('vv-statuscol.types')
 
+---@type VVStatusColConfig
 local defaults = {
   enabled = true,
   ft_ignore = {},
@@ -231,46 +233,5 @@ function M.setup(opts)
   vim.api.nvim_create_user_command('VVStatusColDisable', M.disable, { force = true })
   vim.api.nvim_create_user_command('VVStatusColToggle', M.toggle, { force = true })
 end
-
----@class VVStatusColConfig
----@field enabled? boolean 是否启用状态列 @default true
----@field ft_ignore? string[] 忽略的 filetype 列表；外部传入时整体覆盖默认值 @default {}
----@field bt_ignore? string[] 忽略的 buftype 列表；外部传入时整体覆盖默认值 @default { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }
----@field refresh? integer 缓存刷新间隔（ms） @default 50
----@field fold? VVStatusColFoldConfig 折叠栏配置 @default { open = '', close = '', show_nested_level = false }
----@field git? table<string, { text: string, hl: string }> Git 行级 diff 图标与高亮 @default 使用 VVGitAdded、VVGitModified 与 VVGitDeleted
----@field layout? VVStatusColLayout 内置槽位顺序与点击回调 @default { left = { 'mark', 'sign' }, right = { 'staged', 'unstaged', 'fold' } }
-
----@alias VVStatusColLeftSegment 'mark'|'sign'
----@alias VVStatusColRightSegment 'staged'|'unstaged'|'fold'
----@alias VVStatusColSegment 'gutter'|VVStatusColLeftSegment|VVStatusColRightSegment
----@alias VVStatusColClickCallback fun(ctx: VVStatusColClickContext): boolean?
-
----@class VVStatusColFoldConfig
----@field open? string 展开折叠图标 @default ''
----@field close? string 关闭折叠图标 @default ''
----@field show_nested_level? boolean 折叠栏过窄时显示嵌套层数数字 @default false
-
----@class VVStatusColLayout
----@field left (VVStatusColLeftSegment|VVStatusColLayoutItem)[] 左侧槽位
----@field right (VVStatusColRightSegment|VVStatusColLayoutItem)[] 右侧槽位
-
----@class VVStatusColLayoutItem
----@field segment VVStatusColLeftSegment|VVStatusColRightSegment 内置槽位名称
----@field on_click? VVStatusColClickCallback 点击该槽位时调用；返回 true 可停止事件传播
-
----@class VVStatusColClickTarget
----@field segment VVStatusColSegment
----@field on_click? VVStatusColClickCallback
-
----@class VVStatusColClickContext
----@field segment VVStatusColSegment 点击的槽位
----@field win integer 点击的窗口
----@field buf integer 点击窗口中的 buffer
----@field line integer 点击行号
----@field column integer 点击列号
----@field clicks integer 连续点击次数
----@field button string 鼠标按钮
----@field mods string 修饰键
 
 return M

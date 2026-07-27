@@ -120,8 +120,4 @@ function M.dispatch(minwid, clicks, button, mods)
   if not handled then default(ctx) end
 end
 
----@class VVStatusColClickListener
----@field callback VVStatusColClickCallback
----@field active boolean
-
 return M
