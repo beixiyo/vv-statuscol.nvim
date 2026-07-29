@@ -86,6 +86,7 @@ fold 槽刻意放在 Git 槽之后。Neovim 达到 statuscolumn 最大宽度时�
       },
     },
     git = {
+      staged_dim = 0.7,
       A = { text = '▎', hl = 'VVGitAdded' },    -- 新增行
       C = { text = '▎', hl = 'VVGitModified' },  -- 修改行
       D = { text = '󰆐', hl = 'VVGitDeleted' },   -- 删除行
@@ -107,6 +108,7 @@ fold 槽刻意放在 Git 槽之后。Neovim 达到 statuscolumn 最大宽度时�
 | `fold.show_nested_level` | `boolean` | `false` | 折叠栏过窄时是否显示嵌套层数数字 |
 | `layout.left` | `('mark'\|'sign'\|table)[]` | `{ 'mark', 'sign' }` | 左侧槽位顺序与可选点击回调 |
 | `layout.right` | `('staged'\|'unstaged'\|'fold'\|table)[]` | `{ 'staged', 'unstaged', 'fold' }` | 右侧槽位顺序与可选点击回调 |
+| `git.staged_dim` | `number` | `0.7` | staged 颜色向状态列背景混合 70%；`0` 保持原色，`1` 完全融入背景 |
 | `git.A` | `{ text, hl }` | `{ '▎', 'VVGitAdded' }` | 新增行 glyph + 高亮组 |
 | `git.C` | `{ text, hl }` | `{ '▎', 'VVGitModified' }` | 修改行 |
 | `git.D` | `{ text, hl }` | `{ '󰆐', 'VVGitDeleted' }` | 删除行 |

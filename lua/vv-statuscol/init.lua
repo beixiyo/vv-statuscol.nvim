@@ -21,6 +21,7 @@ local defaults = {
     show_nested_level = false,
   },
   git = {
+    staged_dim = 0.7,
     A = { text = '▎', hl = 'VVGitAdded' },
     C = { text = '▎', hl = 'VVGitModified' },
     D = { text = '󰆐', hl = 'VVGitDeleted' },
@@ -219,12 +220,18 @@ function M.setup(opts)
   if enabled then M.disable() end
 
   config = vim.tbl_deep_extend('force', defaults, opts or {})
+  if type(config.git.staged_dim) ~= 'number'
+      or config.git.staged_dim < 0
+      or config.git.staged_dim > 1 then
+    error('vv-statuscol: git.staged_dim must be a number between 0 and 1')
+  end
   layout_state = layout.configure(config.layout)
 
   click.configure(layout_state.targets)
   signs.configure(layout_state.enabled.left)
   renderer.configure(config, layout_state)
-  require('vv-statuscol.hl').setup()
+
+  require('vv-statuscol.hl').setup(config.git)
   git.configure(config.git)
 
   if config.enabled then M.enable() end

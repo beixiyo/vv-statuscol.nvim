@@ -83,6 +83,7 @@ The fold cell is intentionally placed after the Git cells. When Neovim reaches t
       },
     },
     git = {
+      staged_dim = 0.7,
       A = { text = '▎', hl = 'VVGitAdded' },
       C = { text = '▎', hl = 'VVGitModified' },
       D = { text = '󰆐', hl = 'VVGitDeleted' },
@@ -104,6 +105,7 @@ The fold cell is intentionally placed after the Git cells. When Neovim reaches t
 | `fold.show_nested_level` | `boolean` | `false` | Show numeric nesting levels when the fold column is too narrow |
 | `layout.left` | `('mark'\|'sign'\|table)[]` | `{ 'mark', 'sign' }` | Left-side segment order and optional click callbacks |
 | `layout.right` | `('staged'\|'unstaged'\|'fold'\|table)[]` | `{ 'staged', 'unstaged', 'fold' }` | Right-side segment order and optional click callbacks |
+| `git.staged_dim` | `number` | `0.7` | Blend staged colors 70% toward the status-column background; `0` keeps the source color and `1` fully fades it |
 | `git.A` | `{ text, hl }` | `{ '▎', 'VVGitAdded' }` | Added-line glyph and highlight |
 | `git.C` | `{ text, hl }` | `{ '▎', 'VVGitModified' }` | Changed-line glyph and highlight |
 | `git.D` | `{ text, hl }` | `{ '󰆐', 'VVGitDeleted' }` | Deleted-line glyph and highlight |

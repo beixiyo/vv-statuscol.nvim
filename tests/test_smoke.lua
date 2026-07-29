@@ -95,6 +95,22 @@ assert_eq('虚拟 revision buffer 读取通用 diff source', revision_ready, tru
 assert_eq('revision source 隐藏 staged 空轨', git.channels(revision_buf).staged, false)
 assert_eq('revision source 只显示单条比较轨', git.channels(revision_buf).unstaged, true)
 
+vim.api.nvim_set_hl(0, 'StatusColumn', { bg = '#000000' })
+vim.api.nvim_set_hl(0, 'Added', { fg = '#00ff00' })
+local statuscol_hl = require('vv-statuscol.hl')
+statuscol_hl.setup({
+  staged_dim = 0.7,
+  A = { text = 'A', hl = 'Added' },
+  C = { text = 'C', hl = 'Changed' },
+  D = { text = 'D', hl = 'Deleted' },
+})
+local staged_added = vim.api.nvim_get_hl(0, {
+  name = statuscol_hl.staged('Added'),
+  link = false,
+})
+assert_eq('staged 颜色向状态列背景混合 70%', staged_added.fg, 0x004d00)
+assert_eq('未暂存颜色仍使用原高亮', git.symbol(both_buf, 2, 'unstaged').hl, 'Changed')
+
 local statuscol = require('vv-statuscol')
 local original_statuscolumn = vim.o.statuscolumn
 local original_foldcolumn = vim.o.foldcolumn

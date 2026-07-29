@@ -1,6 +1,7 @@
 -- 状态列渲染：组合布局槽位并缓存最终 statuscolumn 字符串
 
 local git = require('vv-statuscol.git')
+local hl = require('vv-statuscol.hl')
 local layout = require('vv-statuscol.layout')
 local signs = require('vv-statuscol.signs')
 
@@ -26,6 +27,13 @@ local function icon(entry, width)
   end
 
   return text
+end
+
+---@param entry? { text: string, hl?: string }
+---@return { text: string, hl?: string }?
+local function staged_icon(entry)
+  if not entry then return nil end
+  return { text = entry.text, hl = entry.hl and hl.staged(entry.hl) or nil }
 end
 
 ---@param win integer
@@ -90,6 +98,7 @@ local function render(ctx)
   local line = ctx.data.map[vim.v.lnum] or {}
   local staged = ctx.git_has and git.symbol(ctx.buf, vim.v.lnum, 'staged') or nil
   local unstaged = ctx.git_has and git.symbol(ctx.buf, vim.v.lnum, 'unstaged') or nil
+
   layout.append(parts, layout_state.left, {
     mark = mark_width > 0 and icon(line.mark, mark_width) or '',
     sign = sign_width > 0 and icon(line.sign, sign_width) or '',
@@ -97,11 +106,12 @@ local function render(ctx)
   parts[#parts + 1] = layout.clickable(line_number(ctx.win), layout.default_click_id)
   parts[#parts + 1] = layout.clickable(' ', layout.default_click_id)
   layout.append(parts, layout_state.right, {
-    staged = staged_width > 0 and icon(staged, 1) or '',
+    staged = staged_width > 0 and icon(staged_icon(staged), 1) or '',
     unstaged = unstaged_width > 0 and icon(unstaged, 1) or '',
     fold = '%C',
   })
   parts[#parts + 1] = layout.clickable(' ', layout.default_click_id)
+
   return table.concat(parts)
 end
 
@@ -113,15 +123,18 @@ local function cached()
 
   local window_options = vim.wo[win]
   local data = signs.data(buf)
+
   local git_enabled = layout_state.enabled.right.staged == true
     or layout_state.enabled.right.unstaged == true
   local git_has = git_enabled
     and not vim.w[win].vv_statuscol_git_disabled
     and git.has(buf)
     or false
+
   local git_channels = git_has
     and git.channels(buf)
     or { staged = false, unstaged = false }
+
   local ctx = {
     win = win,
     buf = buf,
@@ -129,6 +142,7 @@ local function cached()
     git_has = git_has,
     git_channels = git_channels,
   }
+
   local option_flags = string.format(
     '%d%d%d%d%d',
     window_options.number and 1 or 0,
@@ -137,6 +151,7 @@ local function cached()
     layout_state.enabled.left.sign and data.has_sign and 1 or 0,
     git_has and 1 or 0
   )
+
   local key = string.format(
     '%d:%d:%d:%d:%d:%s',
     win,
@@ -146,6 +161,7 @@ local function cached()
     vim.v.relnum,
     option_flags
   )
+
   local result = result_cache[key]
   if result then return result end
 
