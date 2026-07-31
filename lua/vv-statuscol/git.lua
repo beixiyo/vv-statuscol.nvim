@@ -11,6 +11,7 @@ local pending = {} --- @type table<integer, integer>
 local revisions = {} --- @type table<integer, integer>
 local queued = {} --- @type table<integer, boolean>
 local single_source = {} --- @type table<integer, boolean>
+local lifecycle_epoch = 0
 
 -- text + hl 全部由 init.lua defaults.git 经 M.configure() 单向注入；
 -- 未 configure 前 symbol() 返回 nil（不渲染）
@@ -23,8 +24,11 @@ end
 
 ---@param bufnr integer
 ---@param revision integer
+---@param epoch integer
 ---@param apply fun()
-local function complete(bufnr, revision, apply)
+local function complete(bufnr, revision, epoch, apply)
+  if lifecycle_epoch ~= epoch then return end
+
   local owns_request = pending[bufnr] == revision
   if owns_request then pending[bufnr] = nil end
   if not vim.api.nvim_buf_is_loaded(bufnr) then
@@ -52,6 +56,8 @@ function M.refresh(bufnr)
   if not vim.api.nvim_buf_is_loaded(bufnr) then return end
 
   local revision = (revisions[bufnr] or 0) + 1
+  local epoch = lifecycle_epoch
+
   revisions[bufnr] = revision
   if pending[bufnr] then
     queued[bufnr] = true
@@ -62,7 +68,7 @@ function M.refresh(bufnr)
   if type(source) == 'table' and type(source.path) == 'string' and source.path ~= '' then
     pending[bufnr] = revision
     require('vv-utils.git').diff_lines(source.path, function(result)
-      complete(bufnr, revision, function()
+      complete(bufnr, revision, epoch, function()
         markers[bufnr] = { staged = {}, unstaged = result or {} }
         single_source[bufnr] = true
       end)
@@ -78,7 +84,7 @@ function M.refresh(bufnr)
   end
   pending[bufnr] = revision
   require('vv-utils.git').diff_line_sets(path, function(sets)
-    complete(bufnr, revision, function()
+    complete(bufnr, revision, epoch, function()
       markers[bufnr] = sets
       single_source[bufnr] = nil
     end)
@@ -169,6 +175,16 @@ end
 --- 卸下 attach() 注册的 autocmd（供父模块 disable 时停掉后台 git diff）
 function M.detach()
   pcall(vim.api.nvim_del_augroup_by_name, 'VVStatusColGit')
+  lifecycle_epoch = lifecycle_epoch + 1
+
+  local buffers = {}
+  for buf in pairs(pending) do buffers[#buffers + 1] = buf end
+
+  for _, buf in ipairs(buffers) do
+    pending[buf] = nil
+    revisions[buf] = (revisions[buf] or 0) + 1
+    queued[buf] = nil
+  end
 end
 
 return M

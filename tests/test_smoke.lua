@@ -181,6 +181,31 @@ diff_callbacks[4].callback({ [1] = 'C' })
 assert_eq('新请求期间的刷新仍会补跑', #diff_callbacks, 5)
 diff_callbacks[5].callback({ [2] = 'C' })
 
+git.clear(race_buf)
+local original_statuscol_refresh = statuscol.refresh
+local completion_refreshes = 0
+statuscol.refresh = function(buf)
+  if buf == race_buf then completion_refreshes = completion_refreshes + 1 end
+  return original_statuscol_refresh(buf)
+end
+
+vim.b[race_buf].vv_git_diff_source = { path = 'disabled.txt' }
+git.refresh(race_buf)
+local disabled_callback = diff_callbacks[6].callback
+statuscol.disable()
+disabled_callback({ [1] = 'A' })
+assert_eq('disable 后 pending Git 回调不写 marker', git.symbol(race_buf, 1, 'unstaged'), nil)
+assert_eq('disable 后 pending Git 回调不触发 refresh', completion_refreshes, 0)
+
+statuscol.enable()
+vim.b[race_buf].vv_git_diff_source = { path = 'enabled.txt' }
+git.refresh(race_buf)
+local enabled_callback = diff_callbacks[#diff_callbacks].callback
+enabled_callback({ [2] = 'C' })
+assert_eq('重新 enable 后 Git 回调正常写 marker', git.symbol(race_buf, 2, 'unstaged').hl, 'Changed')
+assert_eq('重新 enable 后 Git 回调正常触发 refresh', completion_refreshes, 1)
+statuscol.refresh = original_statuscol_refresh
+
 git_utils.diff_lines = original_diff_lines
 git.clear(race_buf)
 
