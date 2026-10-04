@@ -10,57 +10,54 @@
 
 ### Added
 
-- `on_click()` 现在返回可重复调用的 disposer，集成方可在重新配置或禁用时释放自己的点击订阅
+- `on_click()` 返回可重复调用的 disposer，可在重新配置或禁用时释放点击订阅
 
 ### Fixed
 
-- `disable()` 会恢复启用前的 `statuscolumn`、`foldcolumn` 与 `fillchars`；若这些选项已被其他插件接管，则保留对方的新值而不覆盖
-- 重复 `setup()` 会先完整停用旧资源再应用新配置，并安全重建用户命令
-- Git diff 请求执行期间收到的新刷新不再被丢弃；旧请求结果会被废弃，并使用最新 buffer 来源重新查询
-- 点击监听器释放后会保持紧凑的有序集合，且允许监听器在事件分发期间安全释放自身或其他监听器
+- 禁用时恢复原有 `statuscolumn`、`foldcolumn` 与 `fillchars`，已被其他插件接管的选项保留新值
+- 重复 `setup()` 完整释放旧资源后应用新配置，并安全重建命令
+- Git 查询期间的新刷新不再丢失，旧结果作废并按最新 buffer 来源重新查询
+- 点击监听器可在事件分发期间安全释放自身或其他监听器，剩余监听器保持顺序
 - 自定义渲染错误不再被静默转换为空状态列
 
 ## 0.1.2 - 2026-07-19
 
 ### Fixed
 
-- fold 槽改用 Neovim 原生 `%C` 与 `foldcolumn=auto:1`，删除 FFI、窗口级折叠缓存和 2000 行扫描上限；从无折叠 buffer 切换到相同 `changedtick` 的其他 buffer 时不再错误隐藏折叠栏，长文件中 2000 行之后的折叠也能正常显示
-- 删除对 Neovim 内部 `fold_info` / `find_window_by_handle` ABI 的依赖，折叠状态改由 Neovim 在每次状态列重绘时实时提供
+- 折叠栏改用 Neovim 原生 `%C` 与 `foldcolumn=auto:1`，不再依赖内部 ABI，修复切换 buffer 后折叠栏误隐藏及 2000 行之后折叠不显示
 
 ### Added
 
-- 新增 `fold.show_nested_level`，控制原生折叠栏过窄时是否显示嵌套层数数字，默认关闭
+- 新增 `fold.show_nested_level`，控制折叠栏过窄时显示嵌套层数数字，默认关闭
 
 ## 0.1.1 - 2026-07-19
 
 ### Changed
 
-- 默认 `ft_ignore` 改为空列表，不再耦合 dashboard、文件树、任务面板等具体插件；`bt_ignore` 统一覆盖 `help`、`nofile`、`prompt`、`quickfix` 与 `terminal` 标准特殊 buffer，外部列表仍按整体覆盖语义工作
-- 忽略判断提前到 sign、Git 与 fold 数据读取之前，特殊 buffer 不再执行无意义的状态列扫描
-- fold 槽移到 staged / unstaged Git 槽之后，statuscolumn 达到宽度上限时优先保留折叠开合图标
-- 新增 `layout.left` / `layout.right` 配置，可排序或隐藏内置槽位，并通过 `{ segment, on_click }` 为单个槽位注册点击回调
-- 点击事件统一提供槽位、窗口、buffer、位置、按钮、点击次数与修饰键上下文；回调返回 `true` 可停止传播，默认折叠行为仅响应左键单击
-- 将 FFI 折叠读取、sign 缓存、布局、渲染与点击分发从入口拆为独立模块，`init.lua` 只保留公开 API、配置和资源生命周期
-- 删除不再使用的 `click_fold()` 与 `_flush_cache()` 内部入口；外部集成统一使用 `on_click()` 与 `refresh()`
+- `ft_ignore` 默认改为空列表，`bt_ignore` 默认覆盖 `help`、`nofile`、`prompt`、`quickfix`、`terminal`；自定义列表整体替换默认值
+- 特殊 buffer 跳过状态列扫描，fold 槽移至 Git 槽之后以在窄栏优先保留折叠图标
+
+### Added
+
+- 新增 `layout.left` / `layout.right`，支持排序、隐藏槽位及通过 `{ segment, on_click }` 设置槽位点击回调
+- 点击事件提供位置、窗口、buffer 与鼠标上下文；返回 `true` 停止传播，默认折叠行为仅响应左键单击
+
+### Breaking
+
+- 删除旧内部入口 `click_fold()` / `_flush_cache()`，外部集成改用 `on_click()` / `refresh()`
 
 ## 0.1.0 - 2026-07-13
 
 ### Changed
 
-- **左侧栏按内容动态收宽**：mark / sign / git 三段改为「整 buffer 有内容才占满宽、否则收成 0 宽」，无标记/诊断/改动的文件左栏只剩行号；fold 段无折叠时同样收 0。配合把原生 `signcolumn` 设 `no`、`foldcolumn` 设 `0`（两者不走 statuscolumn 渲染，置位只会各白占 2 列 / 1 列）。statuscolumn 宽度「只随重绘自动变宽、不自动变窄」，故诊断清空（`DiagnosticChanged`，经 80ms `vv-utils.timer.debounce` 合并打字时的成串 republish）、git 标记变化、折叠开合后均显式 `nvim__redraw{statuscolumn}` 把列收回。`result_cache` 键随之从「窗口选项」改为「`number`/`relativenumber` + 各段是否有内容（`has_mark`/`has_sign`/git）」
-- **末尾恒留 1 格右留白**：动态收宽后 git 段收 0，原本靠 git 段空格充当的「字形↔正文」间距消失，导致折叠三角 / git 竖条贴住正文；现在 statuscolumn 末尾固定补 1 格
-- **fold 段改为「窗口折叠结构」级恒定宽度**：此前 fold 字形逐行出现（只折叠起始行有），而行号经 `%=` 右对齐，导致折叠行的行号被往左挤、同屏行号参差。现按 `fold_info.level > 0`（与开合无关，仅看是否有折叠结构，早退 + 上限 2000 行扫描、按 win+changedtick 缓存）判定整窗是否预留 1 格 fold 槽：有结构则每行恒留 1 格（无字形行填空格），行号右侧宽度稳定不跳；无折叠文件该列收 0
-- **键盘开合折叠即时刷新**：`zR`/`zM`/`zr`/`zm`（ufo）执行后调用 `vv-statuscol._flush_cache()` + `nvim__redraw{statuscolumn}`，折叠三角字形立即更新，不必等 50ms 缓存心跳
+- mark / sign / Git / fold 段无内容时收为零宽，诊断、Git 或折叠变化后及时收窄；配合原生 `signcolumn=no`、`foldcolumn=0` 避免额外空槽
+- 状态列末尾固定留一格，避免折叠或 Git 图标贴住正文
+- fold 槽按整窗折叠结构保持恒定宽度，避免同屏行号跳动
+- `zR` / `zM` / `zr` / `zm`（ufo）后即时刷新折叠图标
 
 ### Fixed
 
-- **行级 diff 不刷新（外部变更）**：commit 移动 HEAD 后 `git diff HEAD` 才变，但此前只在 `FocusGained` 刷新——外部工具（ClaudeCode/Codex 等）在 nvim 内嵌终端里跑 git 时焦点没离开 nvim 进程，`FocusGained` 不触发，标记滞留。现增订 `TermClose`/`TermLeave` 与 vv-git 的 `User VVGitStatusChanged`，统一经新增的 `refresh_visible()` 刷新当前 tab 内所有可见 buffer
-
-- git 异步回调（rev-parse / `git diff -U0`）在 buffer 已 wipe 后仍写回 `markers[bufnr]`，导致已关闭 buffer 的标记复活、随开关文件单调泄漏、复用 bufnr 时 gutter 串显上一个文件的 diff；两个回调写入前均加 `nvim_buf_is_loaded(bufnr)` 守卫，失效则清 markers 并退出
-- `result_cache` 键此前只含 `win:buf:lnum:virtnum:relnum`，未纳入影响渲染的窗口选项（`signcolumn` / `number` / `relativenumber` / `foldcolumn`），切换这些选项后最长 50ms 渲染陈旧串；现把四项折进缓存键，切换即时生效
-- 折叠开合字形滞后：`za`/`zo`/`zc` 等键盘折叠命令为原生操作，既不脏化该行 statuscolumn、也无可靠的折叠变更 autocmd 可挂，而 `render_fold` 读的活折叠状态未纳入 `result_cache` 键，开合后最长 50ms 命中上一帧陈旧的开/合三角；现按 `render_fold` 同一判定折出折叠态（闭合 / 展开起始 / 无字形）并入缓存键，开合即时刷新
-- `disable()` 此前只清空 `statuscolumn`，未停掉 `VVStatusColGit` autocmd 与 50ms 刷新 timer，禁用后每次读写/聚焦仍 spawn git 子进程跑 diff 并对已无状态列的窗口做无意义重绘；现 `enable()`/`disable()` 统一管理后台资源（git autocmd、刷新 timer、`BufWipeout` augroup）的挂载与释放
-
-### Refactored
-
-- git 根探测改用 vv-utils.git.root_async
+- 新增 `refresh_visible()`，在 `TermClose`、`TermLeave` 或 `User VVGitStatusChanged` 后刷新当前 tab 的可见 buffer，避免外部 Git 变更后标记滞留
+- buffer 销毁后 Git 异步结果不再写回，避免标记泄漏及 buffer 编号复用时串显
+- 切换状态列相关窗口选项及原生折叠开合后即时更新，不再显示陈旧内容
+- 禁用插件时停止 Git 监听与刷新计时器，不再执行后台查询和无效重绘

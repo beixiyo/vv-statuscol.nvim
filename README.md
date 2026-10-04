@@ -131,3 +131,30 @@ Those events call `nvim__redraw{statuscolumn}` to force width recalculation. Mar
 The fold segment reads the current window state live through native `%C`. It does not scan buffers or cache fold results, so buffer switches and folds below an arbitrary line limit cannot leave it stale.
 
 Integrations that place signs directly can call `require('vv-statuscol').refresh(buf)`. It invalidates the buffer's sign cache and flushes the status-column redraw immediately.
+
+## Development tests
+
+```sh
+./tests/run.sh
+./tests/run.sh 'FILTER'
+# Optional Neovim override
+NVIM_BIN=/path/to/nvim ./tests/run.sh
+```
+
+Unix-like systems only; requires Neovim 0.12+ (0.12 stable recommended), Git and POSIX shell.
+`./tests/run.sh` prepares pinned vv-utils (`ed9b6ae`) and mini.test sources on first use;
+no sibling checkout, personal Neovim configuration or parser installation is required.
+Dependencies are cached under `VV_TEST_DEPS_CACHE` (default: `$XDG_CACHE_HOME/nvim-test-deps`
+or `~/.cache/nvim-test-deps`); later runs work offline with a populated cache.
+`VV_UTILS` optionally overrides the shared source checkout; `NVIM_BIN` defaults to `nvim`.
+The optional filter matches a literal substring of the file path or Chinese case name;
+no matches fails. The entrypoint does not install system tools.
+
+Each named case starts a fresh child Neovim without personal configuration, with cwd, HOME,
+XDG directories and temporary fixtures under an independent `/tmp` directory. Parent hooks stop the
+child and remove fixtures even after assertion failures; scheduled callback errors are asserted separately.
+Headless state checks do not replace visual or mouse validation in a real terminal.
+
+Git is required: init/config/add/commit run only in fresh `/tmp` fixtures.
+The current local Neovim 0.13 development build also fails four pre-existing open-fold rendering assertions
+(order, narrow column, buffer switch and folds beyond line 2000); these remain failures, not skips or relaxed expectations.
