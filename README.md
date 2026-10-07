@@ -36,13 +36,10 @@ Normal file windows show two independent line-level states. The left Git column 
 
 ### Content-aware width
 
-Unlike status columns that reserve fixed blank slots, every mark, sign, Git, and fold segment has dynamic width:
+Mark, sign, and Git segments have content-aware widths; the fold segment reserves one cell by default:
 
-- A segment collapses to zero when the entire buffer or window has no content of that kind
-- A clean file with no marks, diagnostics, Git changes, or folds shows only line numbers
-- Width is stable across the whole buffer or window, with Neovim managing fold width per window, so right-aligned line numbers do not jump between rows
-
-Set native `signcolumn` to `no` because the plugin renders mark, sign, and Git cells itself. The fold segment uses Neovim's native `%C` item, and `setup()` sets `foldcolumn=auto:1` automatically.
+- Mark, sign, and Git segments collapse to zero when the buffer has no corresponding content
+- The fold segment uses native `%C` with `foldcolumn=1`, avoiding repeated fold-tree scans during text-height calculations that can stall scrolling in long files
 
 ### Layout
 
@@ -65,6 +62,7 @@ The fold cell is intentionally placed after the Git cells. When Neovim reaches t
     bt_ignore = { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' },
     refresh = 50,
     fold = {
+      auto_width = false, -- true restores native auto:1, which may slow down long files
       open = '',
       close = '',
       show_nested_level = false,
@@ -100,6 +98,7 @@ The fold cell is intentionally placed after the Git cells. When Neovim reaches t
 | `ft_ignore` | `string[]` | `{}` | Filetypes that do not render the status column |
 | `bt_ignore` | `string[]` | `{ 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }` | Buftypes that do not render it |
 | `refresh` | `integer` | `50` | Sign-cache flush interval in milliseconds |
+| `fold.auto_width` | `boolean` | `false` | Collapse to zero without folds; may slow down text-height calculations in long files. Fixed one-cell width by default |
 | `fold.open` | `string` | `` | Icon for a foldable start line |
 | `fold.close` | `string` | `` | Icon for a closed fold |
 | `fold.show_nested_level` | `boolean` | `false` | Show numeric nesting levels when the fold column is too narrow |
@@ -128,7 +127,7 @@ Neovim automatically grows a status column during redraw but does not shrink it.
 
 Those events call `nvim__redraw{statuscolumn}` to force width recalculation. Marks have no corresponding event, so the sign-cache heartbeat controlled by `refresh` provides the fallback.
 
-The fold segment reads the current window state live through native `%C`. It does not scan buffers or cache fold results, so buffer switches and folds below an arbitrary line limit cannot leave it stale.
+The fold segment reads the current window state live through native `%C`, without a plugin-owned fold cache or arbitrary line limit. Fixed width avoids repeated native fold-tree scans for automatic column sizing; `fold.auto_width = true` delegates automatic sizing back to Neovim.
 
 Integrations that place signs directly can call `require('vv-statuscol').refresh(buf)`. It invalidates the buffer's sign cache and flushes the status-column redraw immediately.
 

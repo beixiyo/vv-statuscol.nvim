@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5 - 2026-10-07
+
+### Changed
+
+- 折叠列默认固定一格（`foldcolumn=1`），避免原生 `auto:1` 反复扫描折叠树拖慢长文件滚动；新增 `fold.auto_width`
+
 ## 0.1.4 - 2026-07-29
 
 ### Changed

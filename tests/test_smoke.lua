@@ -1,4 +1,4 @@
--- 真实场景在独立子进程中执行；收集阶段仅注册具名用例。
+-- 真实场景在独立子进程中执行；收集阶段仅注册具名用例
 local H = dofile(vim.env.VV_TEST_REPO .. '/tests/helpers.lua')
 local T, child = H.new_set({ setup = 'fixture_smoke.lua' })
 
@@ -278,6 +278,47 @@ T["默认折叠仅响应左键单击且关闭图标仍可见"] = function()
     assert_eq('左键单击触发默认折叠', vim.fn.foldclosed(2), 2)
     statuscol.refresh(both_buf)
     assert_eq('折叠后保留 close 图标', evaluate(sign_win, 2, 4):find('X', 1, true) ~= nil, true)
+  end)
+end
+
+T['折叠列默认固定宽度且可显式恢复自动收窄'] = function()
+  child.lua_func(function()
+    local api = vim.api
+    local statuscol = require('vv-statuscol')
+    local win = api.nvim_get_current_win()
+    api.nvim_buf_set_lines(0, 0, -1, false, { 'one', 'two', 'three' })
+    vim.wo.foldmethod = 'manual'
+    vim.wo.foldenable = true
+
+    local function fold_cell()
+      statuscol.refresh()
+      return api.nvim_eval_statusline('%C', { winid = win, use_statuscol_lnum = 2 })
+    end
+
+    local function setup(auto_width, right)
+      statuscol.setup({
+        fold = { auto_width = auto_width, open = 'F', close = 'X' },
+        layout = { left = {}, right = right or { 'fold' } },
+      })
+    end
+
+    setup()
+    local empty = fold_cell()
+    Smoke.eq('没有折叠时默认仍保留一格，避免自动列宽扫描', empty.width, 1)
+    vim.cmd('2,3fold')
+    Smoke.eq('闭合折叠保留可点击的原生图标', fold_cell().str, 'X')
+    vim.cmd('normal! zR')
+    Smoke.eq('折叠展开后列宽不变', fold_cell().width, empty.width)
+    vim.cmd('normal! zE')
+    Smoke.eq('删除全部折叠后固定列不收窄', fold_cell().width, empty.width)
+
+    setup(true)
+    Smoke.eq('显式自动宽度允许无折叠时收为零宽', fold_cell().width, 0)
+    vim.cmd('2,3fold')
+    Smoke.eq('自动宽度在出现折叠后显示图标', fold_cell().str, 'X')
+    setup(nil, {})
+    Smoke.eq('布局省略 fold 时不保留原生折叠槽', fold_cell().width, 0)
+    statuscol.disable()
   end)
 end
 

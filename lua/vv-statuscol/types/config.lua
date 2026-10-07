@@ -3,11 +3,12 @@
 ---@field ft_ignore? string[] 忽略的 filetype 列表；外部传入时整体覆盖默认值 @default {}
 ---@field bt_ignore? string[] 忽略的 buftype 列表；外部传入时整体覆盖默认值 @default { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }
 ---@field refresh? integer 缓存刷新间隔（ms） @default 50
----@field fold? VVStatusColFoldConfig 折叠栏配置 @default { open = '', close = '', show_nested_level = false }
+---@field fold? VVStatusColFoldConfig 折叠栏配置 @default { auto_width = false, open = '', close = '', show_nested_level = false }
 ---@field git? VVStatusColGitConfig Git 行级 diff 图标、高亮与暂存轨道暗淡比例
 ---@field layout? VVStatusColLayout 内置槽位顺序与点击回调 @default { left = { 'mark', 'sign' }, right = { 'staged', 'unstaged', 'fold' } }
 
 ---@class VVStatusColFoldConfig
+---@field auto_width? boolean 无折叠时收窄为零宽；启用可能使长文件行高计算反复扫描折叠树，默认固定一格 @default false
 ---@field open? string 展开折叠图标 @default ''
 ---@field close? string 关闭折叠图标 @default ''
 ---@field show_nested_level? boolean 折叠栏过窄时显示嵌套层数数字 @default false

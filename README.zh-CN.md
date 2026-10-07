@@ -39,13 +39,10 @@ marker 与 diff 染色表达改动已经足够；同一 buffer 在普通编辑�
 
 ### 核心特性：按内容动态收宽
 
-与多数状态列（含 snacks）的「固定宽度、空槽填空格」不同，本插件把 mark / sign / git / fold **每一段都做成动态宽度**：
+mark / sign / git 按内容动态收宽，fold 默认保留固定一格：
 
-- 整个 buffer/窗口**没有**该类内容时，对应段**收成 0 宽**，statuscolumn 自动收窄
-- 无标记、无诊断、无 git 改动、无折叠的干净文件，左栏**只剩行号**，不浪费一格
-- 宽度判定是「整体级」恒定（mark/sign/git 按 buffer，fold 由 Neovim 按窗口管理），所以**同屏每行宽度一致**，右对齐的行号不会因个别行多/少一格而左右抖动
-
-> mark、sign 与 Git 槽由插件渲染，建议把原生 `signcolumn` 设为 `"no"`。fold 槽使用 Neovim 原生 `%C`，`setup()` 会自动设置 `foldcolumn=auto:1`，无需外部配置
+- 整个 buffer 没有 mark、sign 或 Git 内容时，对应段收成 0 宽
+- fold 使用 Neovim 原生 `%C`，默认 `foldcolumn=1`，避免 `auto:1` 在行高计算中反复遍历折叠树，拖慢长文件滚动
 
 ### 布局
 
@@ -68,6 +65,7 @@ fold 槽刻意放在 Git 槽之后。Neovim 达到 statuscolumn 最大宽度时�
     bt_ignore = { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' },
     refresh = 50,                -- sign 缓存 flush 周期（ms）
     fold = {
+      auto_width = false,       -- 固定一格；true 恢复原生 auto:1，可能拖慢长文件
       open  = '',              -- 可折叠起始行图标（NerdFont caret-down）
       close = '',              -- 已折叠行图标（NerdFont caret-right）
       show_nested_level = false, -- 折叠栏过窄时显示嵌套层数数字
@@ -103,6 +101,7 @@ fold 槽刻意放在 Git 槽之后。Neovim 达到 statuscolumn 最大宽度时�
 | `ft_ignore` | `string[]` | `{}` | 这些 filetype 的 buffer 不渲染状态列 |
 | `bt_ignore` | `string[]` | `{ 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }` | 同上，按 buftype |
 | `refresh` | `integer` | `50` | sign 缓存 flush 周期（ms） |
+| `fold.auto_width` | `boolean` | `false` | 无折叠时收为零宽；启用可能拖慢长文件的行高计算，默认固定一格 |
 | `fold.open` | `string` | `` | 可折叠起始行的图标 |
 | `fold.close` | `string` | `` | 已折叠行的图标 |
 | `fold.show_nested_level` | `boolean` | `false` | 折叠栏过窄时是否显示嵌套层数数字 |
@@ -135,7 +134,7 @@ statuscolumn 的宽度「只随重绘自动**变宽**、不自动**变窄**」�
 
 显式 `nvim__redraw{statuscolumn}` 强制重算宽度。mark 无对应事件，由 `refresh` 周期（默认 50ms）的缓存心跳兜底
 
-fold 槽由原生 `%C` 实时读取当前窗口的折叠状态，不扫描 buffer，也不缓存折叠结果，因此不受 buffer 切换或文件长度影响
+fold 槽由原生 `%C` 实时读取当前窗口的折叠状态，插件不维护折叠缓存或按行数截断扫描。默认固定宽度避免原生自动列宽反复遍历折叠树；`fold.auto_width = true` 时由 Neovim 重新管理自动列宽
 
 直接放置 sign 的集成可调用 `require('vv-statuscol').refresh(buf)`，它会清除该 buffer 的 sign 缓存并立即刷新状态列
 
@@ -145,8 +144,8 @@ fold 槽由原生 `%C` 实时读取当前窗口的折叠状态，不扫描 buffe
 ./tests/run.sh [literal-filter]
 ```
 
-要求 Unix-like 系统、Neovim 0.12+、Git、POSIX shell，以及包含 `dev/test/` 的已有 vv-utils.nvim 源码。入口发现开发集合或已安装源码；`VV_UTILS` 可覆盖路径，`NVIM_BIN` 可指定 Neovim。不读取个人配置，不下载 vv 插件。
+要求 Unix-like 系统、Neovim 0.12+、Git、POSIX shell，以及包含 `dev/test/` 的已有 vv-utils.nvim 源码。入口发现开发集合或已安装源码；`VV_UTILS` 可覆盖路径，`NVIM_BIN` 可指定 Neovim。不读取个人配置，不下载 vv 插件
 
-Git 操作仅在临时 fixture 中执行，不要求 parser。headless 检查不能替代视觉与鼠标验证。
+Git 操作仅在临时 fixture 中执行，不要求 parser。headless 检查不能替代视觉与鼠标验证
 
-过滤为字面子串，无匹配非零退出。依赖发现、mini.test 准备与隔离契约见 [共享测试说明](https://github.com/beixiyo/vv-utils.nvim/blob/main/dev/test/README.zh-CN.md)。
+过滤为字面子串，无匹配非零退出。依赖发现、mini.test 准备与隔离契约见 [共享测试说明](https://github.com/beixiyo/vv-utils.nvim/blob/main/dev/test/README.zh-CN.md)

@@ -16,6 +16,7 @@ local defaults = {
   bt_ignore = { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' },
   refresh = 50,
   fold = {
+    auto_width = false,
     open = '',
     close = '',
     show_nested_level = false,
@@ -47,6 +48,7 @@ local function reset_caches()
   renderer.reset()
 end
 
+---配置原生折叠槽；默认固定一格，避免行高计算反复遍历折叠树
 local function configure_fold_column()
   if not layout_state.enabled.right.fold then
     vim.opt.foldcolumn = '0'
@@ -61,7 +63,7 @@ local function configure_fold_column()
     return value
   end
 
-  vim.opt.foldcolumn = 'auto:1'
+  vim.opt.foldcolumn = config.fold.auto_width and 'auto:1' or '1'
   local fold_chars = {
     foldopen = normalize(config.fold.open),
     foldclose = normalize(config.fold.close),
