@@ -5,6 +5,7 @@ local git = require('vv-statuscol.git')
 local layout = require('vv-statuscol.layout')
 local renderer = require('vv-statuscol.renderer')
 local signs = require('vv-statuscol.signs')
+local width = require('vv-statuscol.width')
 
 local M = {}
 require('vv-statuscol.types')
@@ -122,6 +123,13 @@ local function start_resources()
     })
   end
 
+  vim.api.nvim_create_autocmd('WinClosed', {
+    group = statuscol_augroup,
+    callback = function(args)
+      width.forget(tonumber(args.match))
+    end,
+  })
+
   vim.api.nvim_create_autocmd('BufWipeout', {
     group = statuscol_augroup,
     callback = function(args)
@@ -151,6 +159,7 @@ local function stop_resources()
   end
 
   reset_caches()
+  width.reset()
 end
 
 ---清除指定 buffer 的渲染缓存并立即刷新状态列
@@ -184,6 +193,15 @@ end
 ---@return fun() disposer 可安全重复调用
 function M.on_click(callback)
   return click.on_click(callback)
+end
+
+---订阅状态列宽度变化（sign、git 轨道异步出现或消失、行号选项切换）
+---回调在重绘之后异步执行，此时 `getwininfo(win)[1].textoff` 已是新值；首次渲染只建立基线，不触发
+---依赖 textoff 做布局的虚拟文本（如 render-markdown 的表格换行）可在此触发重渲
+---@param callback VVStatusColWidthCallback
+---@return fun() disposer 可安全重复调用
+function M.on_width_change(callback)
+  return width.on_change(callback)
 end
 
 function M.enable()

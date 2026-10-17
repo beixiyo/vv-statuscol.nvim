@@ -117,6 +117,21 @@ Each layout entry can be a segment name or `{ segment = '...', on_click = functi
 
 Events flow through the segment `on_click`, global listeners registered with `require('vv-statuscol').on_click(...)`, and finally the built-in default behavior. Returning `true` from any callback stops propagation. The default behavior responds only to a single left click and toggles a fold when one exists on the target line. The default layout does not install segment callbacks.
 
+### Width change subscription
+
+Signs and Git tracks can appear or disappear after the first render. The status column width (`textoff`) changes with them, but Neovim does not fire `WinResized` for that. Plugins that lay out content from `window width - textoff` (for example render-markdown's table wrapping) keep using the stale width.
+
+```lua
+local dispose = require('vv-statuscol').on_width_change(function(ctx)
+  -- ctx.win / ctx.buf: the window whose width changed and its buffer
+  -- Runs asynchronously after the redraw, so getwininfo(ctx.win)[1].textoff is already the new value
+end)
+```
+
+- After each redraw the real `textoff` of the window is read and compared with the previous one, so line-number digit growth and `numberwidth` / `foldcolumn` changes are covered too; the first observation, and the first one after `disable()` + `enable()`, notify once
+- A failing subscriber only reports an error and does not affect the others; `dispose()` is safe to call repeatedly
+- The plugin only notifies; whether to re-render is up to the subscriber
+
 ### Built-in Git diff
 
 On `BufReadPost`, `BufWritePost`, `FocusGained`, and related events, the plugin parses `git diff --cached` and `git diff` concurrently. Non-Git repositories and untracked files are ignored silently. The gutter does not update continuously while typing; save with `:w` to refresh it.

@@ -463,4 +463,61 @@ T["特殊缓冲提前退出且禁用只恢复插件拥有的选项"] = function(
   end)
 end
 
+T["状态列宽度变化在重绘后异步通知且覆盖行号位数与重新启用"] = function()
+  child.lua_func(function()
+    local assert_eq, evaluate = Smoke.eq, Smoke.evaluate
+    local statuscol = Smoke.setup()
+    local buf = vim.api.nvim_get_current_buf()
+    local win = vim.api.nvim_get_current_win()
+    vim.wo[win].number = true
+    vim.wo[win].relativenumber = false
+    local lines = {}
+    for i = 1, 99 do lines[i] = 'line ' .. i end
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.fn.sign_define('VVStatusColWidthSign', { text = 'W', texthl = 'DiagnosticInfo' })
+
+    local calls = {}
+    local dispose = statuscol.on_width_change(function(ctx)
+      calls[#calls + 1] = { ctx = ctx, textoff = vim.fn.getwininfo(ctx.win)[1].textoff }
+    end)
+
+    ---重绘并等待订阅回调合并执行完
+    local function settle()
+      statuscol.refresh(buf)
+      evaluate(win, 2)
+      vim.cmd('redraw!')
+      vim.wait(50)
+    end
+
+    settle()
+    assert_eq('首次观察通知一次建立基线', #calls, 1)
+    assert_eq('通知携带窗口', calls[1].ctx.win, win)
+    assert_eq('通知携带 buffer', calls[1].ctx.buf, buf)
+
+    settle()
+    assert_eq('宽度未变时重复求值不再通知', #calls, 1)
+
+    vim.fn.sign_place(0, 'vv-statuscol-width', 'VVStatusColWidthSign', buf, { lnum = 2, priority = 50 })
+    settle()
+    assert_eq('sign 出现撑宽状态列后通知', #calls, 2)
+    assert_eq('回调执行时 textoff 已是新值', calls[2].textoff > calls[1].textoff, true)
+
+    vim.api.nvim_buf_set_lines(buf, -1, -1, false, { 'line 100' })
+    settle()
+    assert_eq('行号从两位增长到三位后通知', #calls, 3)
+    assert_eq('行号变宽后的 textoff 更大', calls[3].textoff > calls[2].textoff, true)
+
+    statuscol.disable()
+    statuscol.enable()
+    settle()
+    assert_eq('重新启用后基线清空并通知', #calls, 4)
+
+    dispose()
+    dispose()
+    vim.fn.sign_unplace('vv-statuscol-width', { buffer = buf })
+    settle()
+    assert_eq('disposer 释放后不再通知', #calls, 4)
+  end)
+end
+
 return T

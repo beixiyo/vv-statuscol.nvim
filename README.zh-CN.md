@@ -120,6 +120,21 @@ layout 条目既可直接写槽位名，也可写成 `{ segment = '...', on_clic
 
 事件依次经过槽位 `on_click`、`require('vv-statuscol').on_click(...)` 注册的全局监听器、最后是内建默认行为。任意回调返回 `true` 即停止后续传播；默认行为只响应左键单击，并在目标行存在折叠时切换开合。插件默认布局没有预置槽位回调
 
+### 宽度变化订阅
+
+sign 与 Git 轨道在首次渲染之后才可能出现或消失，状态列宽度（`textoff`）随之变化，但 Neovim 不会为此触发 `WinResized`。按 `窗口宽度 - textoff` 计算布局的插件（如 render-markdown 的表格换行）会因此沿用过期宽度
+
+```lua
+local dispose = require('vv-statuscol').on_width_change(function(ctx)
+  -- ctx.win / ctx.buf：宽度发生变化的窗口及其 buffer
+  -- 回调在重绘之后异步执行，getwininfo(ctx.win)[1].textoff 已是新值
+end)
+```
+
+- 每个窗口在重绘后读取真实 `textoff`，与上次不同才通知，因此行号位数增长、`numberwidth` / `foldcolumn` 变化也会覆盖；首次观察或 `disable()` 后重新启用会通知一次
+- 订阅者出错只提示，不影响其余订阅者；`dispose()` 可重复调用
+- 插件只通知，是否重渲由订阅者决定
+
 ### 内建 Git diff
 
 事件驱动：`BufReadPost` / `BufWritePost` / `FocusGained` 等事件并行解析

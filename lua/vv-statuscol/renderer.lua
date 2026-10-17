@@ -4,6 +4,7 @@ local git = require('vv-statuscol.git')
 local hl = require('vv-statuscol.hl')
 local layout = require('vv-statuscol.layout')
 local signs = require('vv-statuscol.signs')
+local width_watch = require('vv-statuscol.width')
 
 local M = {}
 
@@ -142,6 +143,8 @@ local function cached()
     git_has = git_has,
     git_channels = git_channels,
   }
+
+  width_watch.track(win, buf)
 
   local option_flags = string.format(
     '%d%d%d%d%d',

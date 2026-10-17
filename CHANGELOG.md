@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 - 2026-10-17
+
+### Added
+
+- `on_width_change()` 订阅状态列宽度 `textoff` 变化，重绘后读取真实值比较，回调异步执行；依赖 `textoff` 的虚拟文本渲染（如 render-markdown 的表格换行）可据此重渲
+
 ## 0.1.5 - 2026-10-07
 
 ### Changed
