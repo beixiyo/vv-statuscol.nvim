@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 - 2026-10-22
+
+### Changed
+
+- 输入类型统一为 `VVStatusColOpts`，由 `VVStatusColConfig` 派生；新增 `get_config()`
+
+### Fixed
+
+- `setup` 合并前深拷贝默认值，修复嵌套表与内部默认配置共享引用
+
 ## 0.2.0 - 2026-10-17
 
 ### Added

@@ -235,11 +235,11 @@ function M.toggle()
   end
 end
 
----@param opts? VVStatusColConfig
+---@param opts? VVStatusColOpts
 function M.setup(opts)
   if enabled then M.disable() end
 
-  config = vim.tbl_deep_extend('force', defaults, opts or {})
+  config = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
   if type(config.git.staged_dim) ~= 'number'
       or config.git.staged_dim < 0
       or config.git.staged_dim > 1 then
@@ -259,6 +259,12 @@ function M.setup(opts)
   vim.api.nvim_create_user_command('VVStatusColEnable', M.enable, { force = true })
   vim.api.nvim_create_user_command('VVStatusColDisable', M.disable, { force = true })
   vim.api.nvim_create_user_command('VVStatusColToggle', M.toggle, { force = true })
+end
+
+---读取当前生效配置的副本；修改返回值不影响插件内部状态
+---@return VVStatusColConfig
+function M.get_config()
+  return vim.deepcopy(config)
 end
 
 return M

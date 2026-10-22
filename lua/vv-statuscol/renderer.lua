@@ -206,5 +206,6 @@ end
 ---@field buf integer
 ---@field data { map: table, has_mark: boolean, has_sign: boolean }
 ---@field git_has boolean
+---@field git_channels { staged: boolean, unstaged: boolean }
 
 return M

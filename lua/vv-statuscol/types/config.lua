@@ -1,20 +1,31 @@
 ---@class VVStatusColConfig
----@field enabled? boolean 是否启用状态列 @default true
----@field ft_ignore? string[] 忽略的 filetype 列表；外部传入时整体覆盖默认值 @default {}
----@field bt_ignore? string[] 忽略的 buftype 列表；外部传入时整体覆盖默认值 @default { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }
----@field refresh? integer 缓存刷新间隔（ms） @default 50
----@field fold? VVStatusColFoldConfig 折叠栏配置 @default { auto_width = false, open = '', close = '', show_nested_level = false }
----@field git? VVStatusColGitConfig Git 行级 diff 图标、高亮与暂存轨道暗淡比例
----@field layout? VVStatusColLayout 内置槽位顺序与点击回调 @default { left = { 'mark', 'sign' }, right = { 'staged', 'unstaged', 'fold' } }
+---@field enabled boolean 是否启用状态列 @default true
+---@field ft_ignore string[] 忽略的 filetype 列表；外部传入时整体覆盖默认值 @default {}
+---@field bt_ignore string[] 忽略的 buftype 列表；外部传入时整体覆盖默认值 @default { 'help', 'nofile', 'prompt', 'quickfix', 'terminal' }
+---@field refresh integer 缓存刷新间隔（ms） @default 50
+---@field fold VVStatusColFoldConfig 折叠栏配置 @default { auto_width = false, open = '', close = '', show_nested_level = false }
+---@field git VVStatusColGitConfig Git 行级 diff 图标、高亮与暂存轨道暗淡比例
+---@field layout VVStatusColLayout 内置槽位顺序与点击回调 @default { left = { 'mark', 'sign' }, right = { 'staged', 'unstaged', 'fold' } }
 
 ---@class VVStatusColFoldConfig
----@field auto_width? boolean 无折叠时收窄为零宽；启用可能使长文件行高计算反复扫描折叠树，默认固定一格 @default false
----@field open? string 展开折叠图标 @default ''
----@field close? string 关闭折叠图标 @default ''
----@field show_nested_level? boolean 折叠栏过窄时显示嵌套层数数字 @default false
+---@field auto_width boolean 无折叠时收窄为零宽；启用可能使长文件行高计算反复扫描折叠树，默认固定一格 @default false
+---@field open string 展开折叠图标 @default ''
+---@field close string 关闭折叠图标 @default ''
+---@field show_nested_level boolean 折叠栏过窄时显示嵌套层数数字 @default false
 
 ---@class VVStatusColGitConfig
----@field staged_dim? number 暂存轨道向 StatusColumn 背景混合的比例，0 为原色，1 为完全融入背景 @default 0.7
----@field A? { text: string, hl: string } 新增行图标与高亮 @default { text = '▎', hl = 'VVGitAdded' }
----@field C? { text: string, hl: string } 修改行图标与高亮 @default { text = '▎', hl = 'VVGitModified' }
----@field D? { text: string, hl: string } 删除行图标与高亮 @default { text = '󰆐', hl = 'VVGitDeleted' }
+---@field staged_dim number 暂存轨道向 StatusColumn 背景混合的比例，0 为原色，1 为完全融入背景 @default 0.7
+---@field A { text: string, hl: string } 新增行图标与高亮 @default { text = '▎', hl = 'VVGitAdded' }
+---@field C { text: string, hl: string } 修改行图标与高亮 @default { text = '▎', hl = 'VVGitModified' }
+---@field D { text: string, hl: string } 删除行图标与高亮 @default { text = '󰆐', hl = 'VVGitDeleted' }
+
+-- 输入类型：由 Config 派生，嵌套表各自 partial
+---@class (partial) VVStatusColFoldOpts: VVStatusColFoldConfig
+---@class (partial) VVStatusColGitOpts: VVStatusColGitConfig
+---@class (partial) VVStatusColLayoutOpts: VVStatusColLayout
+
+---`setup()` 输入配置，由 `VVStatusColConfig` 派生，所有字段可选
+---@class (partial) VVStatusColOpts: VVStatusColConfig
+---@field fold? VVStatusColFoldOpts
+---@field git? VVStatusColGitOpts
+---@field layout? VVStatusColLayoutOpts
