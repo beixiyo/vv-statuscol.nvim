@@ -197,8 +197,7 @@ T["刷新即时显示符号和行号且点击传播支持释放与消费"] = fun
 end
 
 T["右侧轨道按用户顺序渲染且隐藏省略项"] = function()
-  child.lua_func(function()
-    local assert_eq, evaluate = Smoke.eq, Smoke.evaluate
+  local sign_win = child.lua_func(function()
     local statuscol = Smoke.setup()
     local git, tmp_dir, both_buf, revision_buf = Smoke.git_fixture()
     local sign_win = vim.api.nvim_get_current_win()
@@ -213,23 +212,19 @@ T["右侧轨道按用户顺序渲染且隐藏省略项"] = function()
     end)
     statuscol.refresh(both_buf)
 
-    local fold_open_full = evaluate(sign_win, 2)
-    local fold_open_narrow = evaluate(sign_win, 2, 4)
-    local unstaged_pos = fold_open_full:find('C', 1, true) or 0
-    local staged_pos = fold_open_full:find('A', 1, true) or 0
-    local open_pos = fold_open_full:find('F', 1, true) or 0
-    assert_eq(
-      'layout.right 按用户顺序渲染 unstaged / fold',
-      unstaged_pos > 0 and unstaged_pos < open_pos,
-      true
-    )
-    assert_eq('layout.right 隐藏省略的 staged', staged_pos, 0)
+    Smoke.assert_open_fold(sign_win, 2)
+    return sign_win
   end)
+  local gutter = H.gutter(child, sign_win, 2)
+  local unstaged_pos = gutter:find('C', 1, true) or 0
+  local open_pos = gutter:find('F', 1, true) or 0
+  assert(unstaged_pos > 0 and unstaged_pos < open_pos,
+    '真实 gutter 中 layout.right 必须按用户顺序渲染 unstaged / fold：' .. vim.inspect(gutter))
+  assert(not gutter:find('A', 1, true), 'layout.right 必须隐藏省略的 staged')
 end
 
-T["窄栏优先保留折叠图标"] = function()
-  child.lua_func(function()
-    local assert_eq, evaluate = Smoke.eq, Smoke.evaluate
+T["原生超宽压力夹具截断左侧但保留布局末尾折叠"] = function()
+  local sign_win = child.lua_func(function()
     local statuscol = Smoke.setup()
     local git, tmp_dir, both_buf, revision_buf = Smoke.git_fixture()
     local sign_win = vim.api.nvim_get_current_win()
@@ -244,9 +239,32 @@ T["窄栏优先保留折叠图标"] = function()
     end)
     statuscol.refresh(both_buf)
 
-    local fold_open_narrow = evaluate(sign_win, 2, 4)
-    assert_eq('宽度受限时优先保留 fold 图标', fold_open_narrow:find('F', 1, true) ~= nil, true)
+    Smoke.assert_open_fold(sign_win, 2)
+    return sign_win
   end)
+  local ordinary, ordinary_width = H.gutter(child, sign_win, 2)
+  assert(ordinary:find('CF', 1, true) and not ordinary:find('<', 1, true),
+    '正常生产布局未被截断，Git 必须仍在展开折叠左侧：' .. vim.inspect(ordinary))
+
+  child.lua_func(function(win)
+    -- 正常槽位仅占数列，不会触发原生最大宽度；maxwidth=4 也不是强制截断
+    -- 仅给测试格式串首个点击区加超长前缀，保留生产返回的所有槽位及顺序
+    -- 此控制组验证原生截断方向，不冒充生产可自然达到的窄栏负载
+    Smoke.wide_statuscolumn = function()
+      local raw = require('vv-statuscol.renderer').get()
+      local wide, count = raw:gsub('(click@)', '%1' .. string.rep('L', 100), 1)
+      assert(count == 1, '压力前缀必须插入真实格式串的首个点击区')
+      return wide
+    end
+    vim.wo[win].statuscolumn = '%!v:lua.Smoke.wide_statuscolumn()'
+    Smoke.assert_open_fold(win, 2)
+  end, sign_win)
+  local truncated, truncated_width = H.gutter(child, sign_win, 2)
+  assert(truncated:sub(1, 1) == '<' and truncated_width < ordinary_width + 100,
+    '超宽控制组必须真实截断，而非仅设置 maxwidth：' .. vim.inspect(truncated))
+  assert(truncated:find('CF', 1, true),
+    '真实截断后仍须保留布局末尾的 Git / 展开折叠顺序：' .. vim.inspect(truncated))
+  assert(not truncated:find('A', 1, true), '压力控制组仍须隐藏省略的 staged')
 end
 
 T["默认折叠仅响应左键单击且关闭图标仍可见"] = function()
@@ -344,8 +362,8 @@ T["窄折叠列默认不显示嵌套层数"] = function()
 end
 
 T["同窗口切换相同版本缓冲后立即显示真实折叠"] = function()
-  child.lua_func(function()
-    local assert_eq, evaluate = Smoke.eq, Smoke.evaluate
+  local buffers = child.lua_func(function()
+    local assert_eq = Smoke.eq
     local statuscol = Smoke.setup()
     local sign_win = vim.api.nvim_get_current_win()
     local no_fold_buf = vim.api.nvim_create_buf(false, true)
@@ -363,27 +381,36 @@ T["同窗口切换相同版本缓冲后立即显示真实折叠"] = function()
     vim.api.nvim_win_set_buf(sign_win, no_fold_buf)
     vim.wo[sign_win].foldmethod = 'manual'
     statuscol.refresh(no_fold_buf)
-    assert_eq('无折叠 buffer 不显示 fold 图标', evaluate(sign_win, 2):find('F', 1, true), nil)
+    assert_eq('切换前目标行没有折叠', vim.fn.foldlevel(2), 0)
+    assert_eq('切换前目标行没有被闭合折叠隐藏', vim.fn.foldclosed(2), -1)
+    return { win = sign_win, folded = switched_fold_buf }
+  end)
+  local sign_win = buffers.win
+  local without_fold = H.gutter(child, sign_win, 2)
+  assert(not without_fold:find('F', 1, true), '无折叠 buffer 的真实 gutter 不显示 fold 图标')
 
-    vim.api.nvim_win_set_buf(sign_win, switched_fold_buf)
-    vim.api.nvim_win_call(sign_win, function()
+  child.lua_func(function(win, buf)
+    local no_fold_buf = vim.api.nvim_win_get_buf(win)
+    Smoke.eq('切换时两个 buffer 仍使用相同 changedtick',
+      vim.b[no_fold_buf].changedtick, vim.b[buf].changedtick)
+    vim.api.nvim_win_set_buf(win, buf)
+    vim.api.nvim_win_call(win, function()
       vim.wo.foldenable = true
       vim.wo.foldmethod = 'manual'
       vim.cmd('2,3fold')
       vim.cmd('normal! zR')
     end)
-    statuscol.refresh(switched_fold_buf)
-    assert_eq(
-      '同窗口从无折叠 buffer 切换后立即显示 fold 图标',
-      evaluate(sign_win, 2):find('F', 1, true) ~= nil,
-      true
-    )
-  end)
+    require('vv-statuscol').refresh(buf)
+    Smoke.assert_open_fold(win, 2)
+    Smoke.eq('建立折叠后内容版本仍相同', vim.b[no_fold_buf].changedtick, vim.b[buf].changedtick)
+  end, sign_win, buffers.folded)
+  local with_fold = H.gutter(child, sign_win, 2)
+  assert(with_fold:find('F', 1, true),
+    '同窗口从无折叠 buffer 切换后真实 gutter 必须立即显示 fold 图标：' .. vim.inspect(with_fold))
 end
 
 T["两千行之后的折叠不受旧扫描上限影响"] = function()
-  child.lua_func(function()
-    local assert_eq, evaluate = Smoke.eq, Smoke.evaluate
+  local sign_win = child.lua_func(function()
     local statuscol = Smoke.setup()
     local sign_win = vim.api.nvim_get_current_win()
     local long_buf = vim.api.nvim_create_buf(false, true)
@@ -401,12 +428,13 @@ T["两千行之后的折叠不受旧扫描上限影响"] = function()
       vim.cmd('normal! zR')
     end)
     statuscol.refresh(long_buf)
-    assert_eq(
-      '2000 行以后才出现的折叠仍显示 fold 图标',
-      evaluate(sign_win, 2100):find('F', 1, true) ~= nil,
-      true
-    )
+    Smoke.eq('折叠起点之前没有折叠', vim.fn.foldlevel(2099), 0)
+    Smoke.assert_open_fold(sign_win, 2100)
+    return sign_win
   end)
+  local gutter = H.gutter(child, sign_win, 2100)
+  assert(gutter:find('F', 1, true),
+    '2100 行移入视口后真实 gutter 必须显示展开 fold 图标：' .. vim.inspect(gutter))
 end
 
 T["特殊缓冲提前退出且禁用只恢复插件拥有的选项"] = function()

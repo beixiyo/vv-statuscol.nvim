@@ -84,4 +84,30 @@ function M.new_set(opts)
   return T, child
 end
 
+-- 读取真实 redraw 的目标行，不经 nvim_eval_statusline 的独立 %C 求值路径
+function M.gutter(child, win, lnum)
+  local view = child.lua_func(function(target_win, target_line)
+    vim.api.nvim_win_call(target_win, function()
+      vim.api.nvim_win_set_cursor(target_win, { target_line, 0 })
+      vim.cmd('normal! zt')
+    end)
+    vim.cmd('redraw!')
+    local info = vim.fn.getwininfo(target_win)[1]
+    local pos = vim.fn.screenpos(target_win, target_line, 1)
+    assert(pos.row >= info.winrow and pos.row < info.winrow + info.height,
+      '目标行必须实际位于窗口视口内')
+    assert(pos.col == info.wincol + info.textoff, '正文起点必须紧接真实 gutter')
+    return {
+      row = pos.row, col = info.wincol, width = info.textoff,
+      text = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(target_win), target_line - 1, target_line, false)[1],
+    }
+  end, win, lnum)
+  local row = child.get_screenshot({ redraw = false }).text[view.row]
+  -- 这些夹具正文均为短 ASCII 行；同时核对正文，避免误读其他行或折叠摘要
+  local text_col = view.col + view.width
+  assert(table.concat(row, '', text_col, text_col + #view.text - 1) == view.text,
+    '截图正文必须对应目标 buffer 行，不能把隐藏行或折叠摘要当作目标行')
+  return table.concat(row, '', view.col, text_col - 1), view.width
+end
+
 return M

@@ -9,6 +9,14 @@ local function evaluate(win, lnum, maxwidth)
   }).str
 end
 
+local function assert_open_fold(win, lnum)
+  vim.api.nvim_win_call(win, function()
+    eq('目标行确实属于折叠', vim.fn.foldlevel(lnum), 1)
+    eq('目标折叠已展开而非被隐藏', vim.fn.foldclosed(lnum), -1)
+    eq('目标窗口启用了折叠', vim.wo.foldenable, true)
+  end)
+end
+
 local function setup()
   local statuscol = require('vv-statuscol')
   local state = { listener_calls = 0, consume_segment = false }
@@ -80,4 +88,7 @@ local function git_fixture()
   return git, tmp_dir, both_buf, revision_buf
 end
 
-Smoke = { eq = eq, evaluate = evaluate, setup = setup, git_fixture = git_fixture }
+Smoke = {
+  eq = eq, evaluate = evaluate, setup = setup, git_fixture = git_fixture,
+  assert_open_fold = assert_open_fold,
+}

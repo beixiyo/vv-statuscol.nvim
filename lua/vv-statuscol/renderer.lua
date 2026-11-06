@@ -1,4 +1,4 @@
--- 状态列渲染：组合布局槽位并缓存最终 statuscolumn 字符串
+-- 状态列渲染：缓存行级槽位片段，行号随当前窗口与光标实时求值
 
 local git = require('vv-statuscol.git')
 local hl = require('vv-statuscol.hl')
@@ -10,7 +10,7 @@ local M = {}
 
 local config = {}
 local layout_state ---@type VVStatusColLayoutState
-local result_cache = {}
+local fragment_cache = {}
 
 ---@param entry? { text: string, hl?: string }
 ---@param width integer
@@ -73,8 +73,8 @@ local function is_ignored(buf)
 end
 
 ---@param ctx VVStatusColRenderContext
----@return string
-local function render(ctx)
+---@return { left: string, right: string }
+local function render_fragments(ctx)
   local mark_width = layout_state.enabled.left.mark and ctx.data.has_mark and 2 or 0
   local sign_width = layout_state.enabled.left.sign and ctx.data.has_sign and 2 or 0
   local staged_width = layout_state.enabled.right.staged and ctx.git_channels.staged and 1 or 0
@@ -86,14 +86,15 @@ local function render(ctx)
       mark = string.rep(' ', mark_width),
       sign = string.rep(' ', sign_width),
     })
-    parts[#parts + 1] = layout.clickable('%= ', layout.default_click_id)
+    local left = table.concat(parts)
+    parts = {}
     layout.append(parts, layout_state.right, {
       staged = string.rep(' ', staged_width),
       unstaged = string.rep(' ', unstaged_width),
       fold = '%C',
     })
     parts[#parts + 1] = layout.clickable(' ', layout.default_click_id)
-    return table.concat(parts)
+    return { left = left, right = table.concat(parts) }
   end
 
   local line = ctx.data.map[vim.v.lnum] or {}
@@ -104,7 +105,8 @@ local function render(ctx)
     mark = mark_width > 0 and icon(line.mark, mark_width) or '',
     sign = sign_width > 0 and icon(line.sign, sign_width) or '',
   })
-  parts[#parts + 1] = layout.clickable(line_number(ctx.win), layout.default_click_id)
+  local left = table.concat(parts)
+  parts = {}
   parts[#parts + 1] = layout.clickable(' ', layout.default_click_id)
   layout.append(parts, layout_state.right, {
     staged = staged_width > 0 and icon(staged_icon(staged), 1) or '',
@@ -113,7 +115,7 @@ local function render(ctx)
   })
   parts[#parts + 1] = layout.clickable(' ', layout.default_click_id)
 
-  return table.concat(parts)
+  return { left = left, right = table.concat(parts) }
 end
 
 ---@return string
@@ -122,7 +124,6 @@ local function cached()
   local buf = vim.api.nvim_win_get_buf(win)
   if is_ignored(buf) then return '' end
 
-  local window_options = vim.wo[win]
   local data = signs.data(buf)
 
   local git_enabled = layout_state.enabled.right.staged == true
@@ -137,7 +138,6 @@ local function cached()
     or { staged = false, unstaged = false }
 
   local ctx = {
-    win = win,
     buf = buf,
     data = data,
     git_has = git_has,
@@ -147,31 +147,31 @@ local function cached()
   width_watch.track(win, buf)
 
   local option_flags = string.format(
-    '%d%d%d%d%d',
-    window_options.number and 1 or 0,
-    window_options.relativenumber and 1 or 0,
+    '%d%d%d',
     layout_state.enabled.left.mark and data.has_mark and 1 or 0,
     layout_state.enabled.left.sign and data.has_sign and 1 or 0,
     git_has and 1 or 0
   )
 
   local key = string.format(
-    '%d:%d:%d:%d:%d:%s',
+    '%d:%d:%d:%d:%s',
     win,
     buf,
     vim.v.lnum,
     vim.v.virtnum ~= 0 and 1 or 0,
-    vim.v.relnum,
     option_flags
   )
 
-  local result = result_cache[key]
-  if result then return result end
+  local result = fragment_cache[key]
+  if not result then
+    result = render_fragments(ctx)
+    fragment_cache[key] = result
+  end
 
-  local value = render(ctx)
-
-  result_cache[key] = value
-  return value
+  -- number / relativenumber / relnum 只影响中间行号，不使两侧符号重新格式化
+  -- %C 保留在片段中，由 Neovim 每次按目标窗口的实时折叠状态求值
+  local number = vim.v.virtnum ~= 0 and '%= ' or line_number(win)
+  return result.left .. layout.clickable(number, layout.default_click_id) .. result.right
 end
 
 ---@param opts VVStatusColConfig
@@ -190,19 +190,18 @@ end
 ---@param buf integer
 function M.clear_buffer(buf)
   local needle = ':' .. buf .. ':'
-  for key in pairs(result_cache) do
+  for key in pairs(fragment_cache) do
     if key:find(needle, 1, true) then
-      result_cache[key] = nil
+      fragment_cache[key] = nil
     end
   end
 end
 
 function M.reset()
-  result_cache = {}
+  fragment_cache = {}
 end
 
 ---@class VVStatusColRenderContext
----@field win integer
 ---@field buf integer
 ---@field data { map: table, has_mark: boolean, has_sign: boolean }
 ---@field git_has boolean
