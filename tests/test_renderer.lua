@@ -168,23 +168,33 @@ T['缓存命中仍保留真实虚拟行原生折叠双轨和点击区域'] = fun
     assert(not Smoke.evaluate(win, 2):find('X', 1, true), '缓存中的%C必须实时反映折叠展开')
     local ns = api.nvim_create_namespace('虚拟行')
     api.nvim_buf_set_extmark(buf, ns, 1, 0, { virt_lines = { { { 'virtual', 'Comment' } } } })
-    api.nvim_buf_set_lines(buf, 0, 1, false, { string.rep('wrapped ', 40) })
+    -- 第 1 行无改动、第 2 行同时有 staged A 与 unstaged C，两行都折行
+    api.nvim_buf_set_lines(buf, 0, 2, false, { string.rep('wrapped ', 40), string.rep('changed ', 40) })
     vim.wo[win].wrap = true
-    local virtual, wrapped, inserted = {}, false, false
+    local virtual, wrapped_changed, wrapped_clean, inserted = {}, {}, {}, false
     sc.get = function()
       local value = get()
-      if vim.v.virtnum ~= 0 then
-        virtual[#virtual + 1] = value
-        wrapped = wrapped or vim.v.virtnum > 0
-        inserted = inserted or vim.v.virtnum < 0
+      if vim.v.virtnum ~= 0 then virtual[#virtual + 1] = value end
+      if vim.v.virtnum < 0 then
+        inserted = true
+        assert(not value:find('#Added#', 1, true) and not value:find('#Changed#', 1, true), '虚拟行不得重复真实行Git图标')
+      elseif vim.v.virtnum > 0 and vim.g.statusline_winid == win then
+        -- 只看 win：second 窗口关闭了 Git 显示，续行本来就该空白
+        local rows = vim.v.lnum == 2 and wrapped_changed or wrapped_clean
+        rows[#rows + 1] = value
       end
       return value
     end
     vim.cmd('redraw!')
-    assert(wrapped and inserted, '真实重绘必须覆盖折行和extmark虚拟行两种virtnum')
+    assert(#wrapped_changed > 0 and #wrapped_clean > 0 and inserted, '真实重绘必须覆盖折行和extmark虚拟行两种virtnum')
     for _, value in ipairs(virtual) do
       assert(value:find('@%= %T', 1, true), '虚拟行保留空行号点击区')
-      assert(not value:find('#Added#', 1, true) and not value:find('#Changed#', 1, true), '虚拟行不得重复真实行Git图标')
+    end
+    for _, value in ipairs(wrapped_changed) do
+      assert(value:find('StagedA#A', 1, true) and value:find('#Changed#C', 1, true), '改动行的折行续行延续双轨 Git 色带')
+    end
+    for _, value in ipairs(wrapped_clean) do
+      assert(not value:find('StagedA#', 1, true) and not value:find('#Changed#', 1, true), '未改动行的折行续行保持空白')
     end
     api.nvim_win_close(second, true)
     sc.disable()

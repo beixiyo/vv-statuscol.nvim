@@ -82,6 +82,12 @@ local function render_fragments(ctx)
   local parts = {}
 
   if vim.v.virtnum ~= 0 then
+    -- virtnum > 0 是折行续行，git 色带要延续下来，否则长行改动在状态列里断成一截一截
+    -- virtnum < 0 是虚拟行（diff filler、virt_lines），不属于任何源码行，保持空白
+    local wrapped = vim.v.virtnum > 0 and ctx.git_has
+    local staged = wrapped and git.wrap_symbol(ctx.buf, vim.v.lnum, 'staged') or nil
+    local unstaged = wrapped and git.wrap_symbol(ctx.buf, vim.v.lnum, 'unstaged') or nil
+
     layout.append(parts, layout_state.left, {
       mark = string.rep(' ', mark_width),
       sign = string.rep(' ', sign_width),
@@ -89,8 +95,8 @@ local function render_fragments(ctx)
     local left = table.concat(parts)
     parts = {}
     layout.append(parts, layout_state.right, {
-      staged = string.rep(' ', staged_width),
-      unstaged = string.rep(' ', unstaged_width),
+      staged = staged_width > 0 and icon(staged_icon(staged), 1) or '',
+      unstaged = unstaged_width > 0 and icon(unstaged, 1) or '',
       fold = '%C',
     })
     parts[#parts + 1] = layout.clickable(' ', layout.default_click_id)
@@ -158,7 +164,7 @@ local function cached()
     win,
     buf,
     vim.v.lnum,
-    vim.v.virtnum ~= 0 and 1 or 0,
+    vim.v.virtnum > 0 and 1 or vim.v.virtnum < 0 and 2 or 0,
     option_flags
   )
 

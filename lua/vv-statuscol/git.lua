@@ -101,6 +101,19 @@ function M.symbol(buf, lnum, mode)
   return kind and GLYPHS[kind]
 end
 
+---折行续行沿用的符号：新增 / 修改是整行状态，续行延续同一条色带；
+---删除标记指向行边界，只画在首行
+---@param buf integer
+---@param lnum integer
+---@param mode 'staged'|'unstaged'
+---@return {text:string, hl:string}?
+function M.wrap_symbol(buf, lnum, mode)
+  local sets = markers[buf]
+  local kind = sets and sets[mode] and sets[mode][lnum]
+  if kind == 'D' then return nil end
+  return kind and GLYPHS[kind]
+end
+
 ---buffer 是否存在任意行级 git 标记（有则 staged / unstaged 双轨共 2 列，无则 0）
 ---@param buf integer
 ---@return boolean
