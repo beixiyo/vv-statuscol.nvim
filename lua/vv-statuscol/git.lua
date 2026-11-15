@@ -64,8 +64,8 @@ function M.refresh(bufnr)
     return
   end
 
-  local source = vim.b[bufnr].vv_git_diff_source
-  if type(source) == 'table' and type(source.path) == 'string' and source.path ~= '' then
+  local source = require('vv-utils.git.diff_source').get(bufnr)
+  if source then
     pending[bufnr] = revision
     require('vv-utils.git').diff_lines(source.path, function(result)
       complete(bufnr, revision, epoch, function()
@@ -158,6 +158,7 @@ function M.attach()
     group = g,
     callback = function(args) M.refresh(args.buf) end,
   })
+
   -- 外部 git 状态变更 → 刷新可见 buffer 的行级 diff
   --   * FocusGained ——————————— 切回 nvim（独立终端里跑 git；FocusGained 只覆盖此场景）
   --   * TermClose/TermLeave ————— 退出内嵌终端（ClaudeCode/Codex 在 :terminal 里直接跑 git，
@@ -168,15 +169,28 @@ function M.attach()
     group = g,
     callback = function() refresh_visible() end,
   })
+
   vim.api.nvim_create_autocmd('User', {
     group = g,
     pattern = 'VVGitStatusChanged',
     callback = function() refresh_visible() end,
   })
+
+  -- buffer 的 diff 源声明变化
+  vim.api.nvim_create_autocmd('User', {
+    group = g,
+    pattern = require('vv-utils.git.diff_source').EVENT,
+    callback = function(args)
+      local buf = type(args.data) == 'table' and args.data.buf
+      if type(buf) == 'number' and vim.api.nvim_buf_is_valid(buf) then M.refresh(buf) end
+    end,
+  })
+
   vim.api.nvim_create_autocmd('BufWipeout', {
     group = g,
     callback = function(args) M.clear(args.buf) end,
   })
+
   -- 启动时刷一遍已打开的 listed buffer
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buflisted then

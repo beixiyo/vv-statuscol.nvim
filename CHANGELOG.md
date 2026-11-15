@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.3 - 2026-11-15
+
+### Added
+
+- scratch buffer 的 Git 来源改经 `vv-utils.git.diff_source` 读取，并订阅其变化事件，声明后立即计算行级标记；不再写死其它插件的变量名
+
+### Fixed
+
+- `disable()` / `enable()` 只对当前窗口生效
+
 ## 0.3.2 - 2026-11-14
 
 ### Fixed

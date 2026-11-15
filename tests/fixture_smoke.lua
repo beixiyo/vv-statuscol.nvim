@@ -70,7 +70,7 @@ local function git_fixture()
   vim.fn.system({ 'git', '-C', tmp_dir, 'commit', '-qm', 'second' })
   local revision_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(revision_buf, 0, -1, false, { 'one', 'staged', 'two', 'three' })
-  vim.b[revision_buf].vv_git_diff_source = {
+  vim.b[revision_buf].vv_diff_source = {
     root = tmp_dir,
     path = 'both.txt',
     from_rev = 'HEAD^',

@@ -59,9 +59,9 @@ T["Git 回调合并最新来源且清理和禁用废弃旧结果"] = function()
       }
     end
 
-    vim.b[race_buf].vv_git_diff_source = { path = 'first.txt' }
+    vim.b[race_buf].vv_diff_source = { path = 'first.txt' }
     git.refresh(race_buf)
-    vim.b[race_buf].vv_git_diff_source = { path = 'latest.txt' }
+    vim.b[race_buf].vv_diff_source = { path = 'latest.txt' }
     git.refresh(race_buf)
     assert_eq('Git 请求执行期间合并后续刷新', #diff_callbacks, 1)
 
@@ -72,10 +72,10 @@ T["Git 回调合并最新来源且清理和禁用废弃旧结果"] = function()
     assert_eq('旧 Git 结果不会写入 marker', git.symbol(race_buf, 1, 'unstaged'), nil)
     assert_eq('最新 Git 结果写入 marker', git.symbol(race_buf, 2, 'unstaged').hl, 'Changed')
 
-    vim.b[race_buf].vv_git_diff_source = { path = 'obsolete.txt' }
+    vim.b[race_buf].vv_diff_source = { path = 'obsolete.txt' }
     git.refresh(race_buf)
     git.clear(race_buf)
-    vim.b[race_buf].vv_git_diff_source = { path = 'current.txt' }
+    vim.b[race_buf].vv_diff_source = { path = 'current.txt' }
     git.refresh(race_buf)
     diff_callbacks[3].callback({ [1] = 'A' })
     git.refresh(race_buf)
@@ -92,7 +92,7 @@ T["Git 回调合并最新来源且清理和禁用废弃旧结果"] = function()
       return original_statuscol_refresh(buf)
     end
 
-    vim.b[race_buf].vv_git_diff_source = { path = 'disabled.txt' }
+    vim.b[race_buf].vv_diff_source = { path = 'disabled.txt' }
     git.refresh(race_buf)
     local disabled_callback = diff_callbacks[6].callback
     statuscol.disable()
@@ -101,7 +101,7 @@ T["Git 回调合并最新来源且清理和禁用废弃旧结果"] = function()
     assert_eq('disable 后 pending Git 回调不触发 refresh', completion_refreshes, 0)
 
     statuscol.enable()
-    vim.b[race_buf].vv_git_diff_source = { path = 'enabled.txt' }
+    vim.b[race_buf].vv_diff_source = { path = 'enabled.txt' }
     git.refresh(race_buf)
     local enabled_callback = diff_callbacks[#diff_callbacks].callback
     enabled_callback({ [2] = 'C' })

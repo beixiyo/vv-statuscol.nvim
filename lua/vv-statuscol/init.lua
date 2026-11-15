@@ -43,6 +43,7 @@ local diagnostic_cancel
 local statuscolumn = "%!v:lua.require'vv-statuscol'.get()"
 local saved_options
 local owned_options
+local released_windows = {} ---@type integer[] 上次禁用时被还原的非当前窗口
 
 local function reset_caches()
   signs.reset()
@@ -87,14 +88,52 @@ local function save_options()
   }
 end
 
+-- 'statuscolumn' 与 'foldcolumn' 是窗口局部选项：vim.o 只写全局值和当前窗口，
+-- 其余窗口各自持有创建时复制的值，必须逐个处理
+local WINDOW_OPTIONS = { 'statuscolumn', 'foldcolumn' }
+
+---@param win integer
+---@param from table<string, string> 仅当窗口当前值与之一致才改写，保留用户或其它插件单独设置的窗口
+---@param to table<string, string>
+---@return boolean changed
+local function swap_window_options(win, from, to)
+  local changed = false
+  for _, name in ipairs(WINDOW_OPTIONS) do
+    if vim.wo[win][name] == from[name] and from[name] ~= to[name] then
+      vim.wo[win][name] = to[name]
+      changed = true
+    end
+  end
+  return changed
+end
+
 local function restore_options()
   if not saved_options then return end
+
+  local current = vim.api.nvim_get_current_win()
+  if owned_options then
+    -- 记下被还原的窗口，重新启用时原样接回；禁用期间新开的窗口只能随当前窗口或全局值走
+    released_windows = {}
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if win ~= current and swap_window_options(win, owned_options, saved_options) then
+        released_windows[#released_windows + 1] = win
+      end
+    end
+  end
 
   for name, value in pairs(saved_options) do
     if owned_options and vim.o[name] == owned_options[name] then vim.o[name] = value end
   end
   saved_options = nil
   owned_options = nil
+end
+
+---把禁用时还原过的窗口重新接回；期间被改成别的值的窗口不动
+local function reclaim_windows()
+  for _, win in ipairs(released_windows) do
+    if vim.api.nvim_win_is_valid(win) then swap_window_options(win, saved_options, owned_options) end
+  end
+  released_windows = {}
 end
 
 local function start_resources()
@@ -217,6 +256,7 @@ function M.enable()
     foldcolumn = vim.o.foldcolumn,
     fillchars = vim.o.fillchars,
   }
+  reclaim_windows()
 end
 
 function M.disable()
